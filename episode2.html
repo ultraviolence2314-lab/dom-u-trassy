@@ -237,7 +237,7 @@ body{font-family:var(--f-mono);-webkit-user-select:none;user-select:none;-webkit
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js"></script>
 <script src="net.js"></script>
 <script>
 (() => {
@@ -978,7 +978,7 @@ const CODE_CH = 'abcdefghjkmnpqrstuvwxyz23456789';
 const newCode = () => { let c = ''; for (let i = 0; i < 4; i++) c += CODE_CH[Math.random() * CODE_CH.length | 0]; return c; };
 async function joinRoom(code, create) {
   $('createBtn').disabled = $('joinBtn').disabled = true;
-  $('netNote').textContent = create ? 'Создаю комнату…' : 'Подключаюсь к комнате…';
+  $('netNote').textContent = (create ? 'Создаю комнату…' : 'Подключаюсь к комнате…') + ' Обычно это пара секунд, в медленной сети — до полуминуты.';
   try { NET.rm = await DomNet.open(code, create); }
   catch (e) {
     $('createBtn').disabled = $('joinBtn').disabled = false;
@@ -1025,7 +1025,7 @@ function renderLobby(force) {
   const h = CH_ORDER.map(ch => {
     const C = CHARS[ch], owner = ps.find(p => p.pres && p.pres.ch === ch);
     const mine = owner && owner.isMe, taken = owner && !owner.isMe;
-    return `<button type="button" class="role${mine ? ' mine' : ''}${taken ? ' taken' : ''}" data-ch="${ch}" style="--c:${C.css}" ${taken ? 'aria-disabled="true"' : ''}><i>${C.type === 'teen' ? 'Старший' : 'Младший'} · ${C.age} ${word(C.age, 'год', 'года', 'лет')}</i><b style="color:${C.css}">${C.name}</b><span>${C.blurb}</span><em>${owner ? (mine ? 'Это ты' : 'Играет ' + esc(owner.nick)) : 'Свободен'}</em></button>`;
+    return `<button type="button" class="role${mine ? ' mine' : ''}${taken ? ' taken' : ''}" data-ch="${ch}" style="--c:${C.css}" ${taken ? 'aria-disabled="true"' : ''}><i>${C.type === 'teen' ? gw(C, 'Старший', 'Старшая') : gw(C, 'Младший', 'Младшая')} · ${C.age} ${word(C.age, 'год', 'года', 'лет')}</i><b style="color:${C.css}">${C.name}</b><span>${C.blurb}</span><em>${owner ? (mine ? 'Это ты' : 'Играет ' + esc(owner.nick)) : 'Свободен'}</em></button>`;
   }).join('');
   if (h !== lobbyHTML || force) { $('roles').innerHTML = h; lobbyHTML = h; }
   const ok = lobbyOk();
@@ -1088,7 +1088,7 @@ function drawHUD() {
   const others = tasks.filter(t => W.assign[t.id] && W.assign[t.id] !== NET.me && !t.d(W));
   const capLine = W.cap[NET.me] ? [`<li>Тебя заперли в подвале. ${ME.type === 'kid' ? 'Ты можешь вылезти через продух под потолком.' : 'Жди, пока друзья отодвинут засов на люке сверху.'}</li>`] : [];
   const h = (capLine.join('') + mine.map(t => { const d = t.d(W); return `<li class="${d ? 'done' : ''}">${esc(t.t)}${!d && t.sub ? `<small>${esc(t.sub(W))}</small>` : ''}</li>`; }).join('')) + '|' +
-    others.map(t => `<li><b>${esc(nameOf(W.assign[t.id]))}:</b> ${esc(t.t.toLowerCase())}</li>`).join('') + '|' + clockStr() + '|' + W.act;
+    others.map(t => `<li><b>${esc(nameOf(W.assign[t.id]))}:</b> ${esc(t.t[0].toLowerCase() + t.t.slice(1))}</li>`).join('') + '|' + clockStr() + '|' + W.act;
   if (h !== hudHTML) {
     hudHTML = h; const [a, b] = h.split('|');
     $('objList').innerHTML = a || '<li class="done">Пока всё</li>'; $('othList').innerHTML = b; $('oth').hidden = !b;
@@ -1269,7 +1269,7 @@ function begin() {
   $('title').hidden = true; $('lobby').hidden = true; $('hud').hidden = false; if (TOUCH) $('touch').hidden = false;
   $('tRun').hidden = ME.type !== 'teen';
   const sp = SPAWN[MYCH]; P.x = sp[0]; P.z = sp[1]; yaw = sp[2]; P.lv = 'g';
-  $('who').innerHTML = `<span style="color:${ME.css}">${ME.name}</span><em>${ME.age} ${word(ME.age, 'год', 'года', 'лет')} · ${ME.type === 'teen' ? 'старший' : 'младший'}</em>`;
+  $('who').innerHTML = `<span style="color:${ME.css}">${ME.name}</span><em>${ME.age} ${word(ME.age, 'год', 'года', 'лет')} · ${ME.type === 'teen' ? gw(ME, 'старший', 'старшая') : gw(ME, 'младший', 'младшая')}</em>`;
   prev.cap = !!W.cap[NET.me];
   if (!TOUCH) tryLock();
 }

@@ -1,12 +1,21 @@
 /* Связь между игроками для «Дома у трассы».
    На claude.ai — комната Claude (capability room).
-   На любом другом сайте — прямое соединение браузеров через PeerJS:
-   создатель комнаты становится «узлом», остальные подключаются к нему,
-   узел собирает presence всех игроков и рассылает обратно.
+   На любом другом сайте — публичный посредник MQTT по защищённому веб-соединению (wss):
+   каждый игрок публикует своё состояние в тему комнаты и слушает остальных.
+   Прямые соединения браузеров (WebRTC) не используем: их часто режут рабочие сети и VPN.
    Наружу у обоих вариантов одинаковый вид: room.peers(), room.presence(patch), room.onError(fn). */
 (function () {
   'use strict';
-  const PREFIX = 'domutrassy-';
+  // Публичные серверы без регистрации. shiftr.io обычно быстрее, но иногда молчит —
+  // тогда через 10 с переходим на HiveMQ (он медленнее, зато отвечает почти всегда).
+  const BROKERS = [
+    { url: 'wss://public.cloud.shiftr.io:443', opts: { username: 'public', password: 'public' }, wait: 10000 },
+    { url: 'wss://broker.hivemq.com:8884/mqtt', opts: {}, wait: 25000 }
+  ];
+  const FIND_WAIT = 8000;     // мс: сколько ждать создателя комнаты на одном сервере
+  const ROOT = 'domutrassy/v1/';
+  const SEND_EVERY = 125;     // мс: не чаще 8 сообщений в секунду
+  const STALE = 8000;         // мс: игрок пропал, если молчит дольше
 
   async function claudeRoom() {
     if (!window.claude || !window.claude.use) return null;
@@ -23,7 +32,7 @@
     const errs = [];
     rm.onPeers(() => { }, e => errs.forEach(f => f(e && e.code)));
     return {
-      kind: 'claude',
+      kind: 'claude', isHub: false,
       peers: () => rm.peers().map(p => ({ peer: p.peer, sameTab: !!p.sameTab, presence: p.presence || {} })),
       presence: patch => rm.presence(patch),
       onError: fn => errs.push(fn),
@@ -31,90 +40,95 @@
     };
   }
 
-  // ---- PeerJS ----
-  function newPeer(id) {
-    return new Promise((res, rej) => {
-      const p = id ? new window.Peer(id, { debug: 0 }) : new window.Peer({ debug: 0 });
-      const t = setTimeout(() => { rej('timeout'); try { p.destroy(); } catch (e) { } }, 12000);
-      p.on('open', () => { clearTimeout(t); res(p); });
-      p.on('error', e => { clearTimeout(t); rej(e && e.type || 'error'); });
-    });
-  }
+  // ---- посредник MQTT ----
   function applyPatch(obj, patch) {
     const o = Object.assign({}, obj);
     for (const k in patch) { if (patch[k] === null) delete o[k]; else o[k] = patch[k]; }
     return o;
   }
-
-  async function hostPeer(code) {
-    const peer = await newPeer(PREFIX + code);
-    const conns = new Map();        // id -> DataConnection
-    const pres = new Map();         // id -> presence
-    let mine = {};
-    const errs = [];
-    let snap = null;
-    const broadcast = () => {
-      const all = { [peer.id]: mine };
-      pres.forEach((v, k) => { all[k] = v; });
-      const msg = { t: 'all', all };
-      conns.forEach(c => { if (c.open) { try { c.send(msg); } catch (e) { } } });
-    };
-    peer.on('connection', c => {
-      c.on('open', () => { conns.set(c.peer, c); broadcast(); });
-      c.on('data', m => { if (m && m.t === 'p' && m.p && typeof m.p === 'object') { pres.set(c.peer, m.p); snap = null; } });
-      c.on('close', () => { conns.delete(c.peer); pres.delete(c.peer); snap = null; });
-      c.on('error', () => { conns.delete(c.peer); pres.delete(c.peer); snap = null; });
+  function connectBroker(b, id, will) {
+    return new Promise((res, rej) => {
+      const c = window.mqtt.connect(b.url, Object.assign({ clientId: id, keepalive: 20, connectTimeout: b.wait, reconnectPeriod: 2000, clean: true, will }, b.opts));
+      const t = setTimeout(() => { try { c.end(true); } catch (e) { } rej('timeout'); }, b.wait + 500);
+      c.once('connect', () => { clearTimeout(t); res(c); });
+      c.once('error', () => { clearTimeout(t); try { c.end(true); } catch (e) { } rej('network'); });
     });
-    peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { } });
-    peer.on('error', e => { if (e && e.type === 'network') errs.forEach(f => f('network')); });
-    return {
-      kind: 'peer', isHub: true,
-      peers: () => snap || (snap = [{ peer: peer.id, sameTab: true, presence: mine }].concat([...pres].map(([k, v]) => ({ peer: k, sameTab: false, presence: v })))),
-      presence: async patch => { mine = applyPatch(mine, patch); snap = null; broadcast(); },
-      onError: fn => errs.push(fn),
-      close: () => { try { peer.destroy(); } catch (e) { } }
-    };
   }
-
-  async function joinPeer(code) {
-    const peer = await newPeer(null);
-    const conn = await new Promise((res, rej) => {
-      const c = peer.connect(PREFIX + code, { reliable: true, serialization: 'json' });
-      const t = setTimeout(() => rej('not_found'), 12000);
-      c.on('open', () => { clearTimeout(t); res(c); });
-      peer.on('error', e => { clearTimeout(t); rej(e && e.type === 'peer-unavailable' ? 'not_found' : (e && e.type) || 'error'); });
-    });
-    let all = {}, mine = {}, snap = null;
+  // Создатель комнаты берёт первый сервер, который ответил. Тот, кто входит, ищет комнату по очереди на всех.
+  async function openRelay(code, create) {
+    let lastErr = 'network';
+    for (const b of BROKERS) {
+      try { return await openOn(b, code, create); }
+      catch (e) { lastErr = e; if (create && e === 'unavailable-id') throw e; }
+    }
+    throw lastErr;
+  }
+  async function openOn(broker, code, create) {
+    const id = 'p' + Math.random().toString(36).slice(2, 10);
+    const base = ROOT + code + '/p/', mineTopic = base + id;
+    const will = { topic: mineTopic, payload: '', qos: 0, retain: false };
+    const client = await connectBroker(broker, id, will);
+    const others = new Map();   // id -> { presence, at }
+    let mine = {}, snap = null, dirty = false, lastSent = 0, timer = null, offlineSince = 0, failed = false;
     const errs = [];
-    conn.on('data', m => { if (m && m.t === 'all' && m.all && typeof m.all === 'object') { all = m.all; snap = null; } });
-    const lost = () => errs.forEach(f => f('host_left'));
-    conn.on('close', lost); conn.on('error', lost);
+    client.on('message', (topic, buf) => {
+      const pid = topic.slice(base.length); if (!pid || pid === id) return;
+      const txt = buf && buf.toString();
+      if (!txt) { others.delete(pid); snap = null; return; }
+      try { const m = JSON.parse(txt); if (m && m.p && typeof m.p === 'object') { others.set(pid, { presence: m.p, at: Date.now() }); snap = null; } } catch (e) { }
+    });
+    client.on('offline', () => { if (!offlineSince) offlineSince = Date.now(); });
+    client.on('connect', () => { offlineSince = 0; client.subscribe(base + '+'); });
+    await new Promise((res, rej) => client.subscribe(base + '+', { qos: 0 }, e => e ? rej('network') : res()));
+    function flush() {
+      timer = null; if (!client.connected) return;
+      lastSent = Date.now(); dirty = false;
+      client.publish(mineTopic, JSON.stringify({ p: mine }), { qos: 0, retain: false });
+    }
+    function schedule() {
+      dirty = true; if (timer) return;
+      const wait = Math.max(0, SEND_EVERY - (Date.now() - lastSent));
+      timer = setTimeout(flush, wait);
+    }
+    const peersNow = () => {
+      const now = Date.now(); let changed = false;
+      others.forEach((v, k) => { if (now - v.at > STALE) { others.delete(k); changed = true; } });
+      if (changed) snap = null;
+      return snap || (snap = [{ peer: id, sameTab: true, presence: mine }].concat([...others].map(([k, v]) => ({ peer: k, sameTab: false, presence: v.presence }))));
+    };
+    // проверка кода: при создании комната должна быть пустой, при входе — не пустой
+    if (create) await new Promise(r => setTimeout(r, 1500));
+    else { const t0 = Date.now(); while (!others.size && Date.now() - t0 < FIND_WAIT) await new Promise(r => setTimeout(r, 200)); }
+    const count = others.size;
+    if (create && count > 0) { try { client.end(true); } catch (e) { } throw 'unavailable-id'; }
+    if (!create && count === 0) { try { client.end(true); } catch (e) { } throw 'not_found'; }
+    // раз в секунду напоминаем о себе; без связи дольше 12 с — сообщаем игре
+    setInterval(() => {
+      if (offlineSince && !failed && Date.now() - offlineSince > 12000) { failed = true; errs.forEach(f => f('network')); }
+      if (Date.now() - lastSent > 1000) flush();
+    }, 1000);
+    addEventListener('pagehide', () => { try { client.publish(mineTopic, '', { qos: 0, retain: false }); client.end(); } catch (e) { } });
     return {
-      kind: 'peer', isHub: false,
-      peers: () => {
-        if (snap) return snap;
-        const list = [{ peer: peer.id, sameTab: true, presence: mine }];
-        for (const k in all) if (k !== peer.id) list.push({ peer: k, sameTab: false, presence: all[k] || {} });
-        return (snap = list);
-      },
-      presence: async patch => { mine = applyPatch(mine, patch); snap = null; if (conn.open) { try { conn.send({ t: 'p', p: mine }); } catch (e) { } } },
+      kind: 'relay', isHub: !!create,
+      peers: peersNow,
+      presence: async patch => { mine = applyPatch(mine, patch); snap = null; schedule(); },
       onError: fn => errs.push(fn),
-      close: () => { try { peer.destroy(); } catch (e) { } }
+      close: () => { try { client.publish(mineTopic, ''); client.end(); } catch (e) { } }
     };
   }
 
   let lobby = null, kind = null;
   window.DomNet = {
-    // 'claude' | 'peer' | null
+    // 'claude' | 'relay' | null
     async detect() {
       lobby = await claudeRoom();
-      kind = lobby ? 'claude' : (window.Peer ? 'peer' : null);
+      kind = lobby ? 'claude' : (window.mqtt ? 'relay' : null);
       return kind;
     },
     // create: true — создаю комнату с этим кодом, false — вхожу в чужую
     async open(code, create) {
       if (kind === 'claude') return openClaude(lobby, code);
-      if (kind === 'peer') return create ? hostPeer(code) : joinPeer(code);
+      if (kind === 'relay') return openRelay(code, create);
       throw 'unavailable';
     },
     errorText(e) {
@@ -122,9 +136,7 @@
         case 'not_found': return 'Комната с таким кодом не найдена. Проверь код и что у друга открыто лобби.';
         case 'unavailable-id': return 'Такой код уже занят. Попробуй ещё раз.';
         case 'host_left': return 'Связь с хозяином комнаты пропала. Игра у него закрылась или пропал интернет.';
-        case 'network': case 'server-error': case 'socket-error': case 'socket-closed': return 'Не получается связаться с сервером соединений. Проверь интернет и попробуй ещё раз.';
-        case 'browser-incompatible': return 'Этот браузер не умеет прямые соединения. Попробуй Chrome, Safari или Firefox.';
-        case 'timeout': return 'Соединение не установилось за 12 секунд. Попробуй ещё раз или другую сеть.';
+        case 'network': case 'timeout': return 'Не получается связаться с сервером игры. Проверь интернет и попробуй ещё раз. Если не выходит в рабочей сети или под VPN, попробуй дома или с телефона.';
         default: return 'Не получилось подключиться. Попробуй ещё раз.';
       }
     }

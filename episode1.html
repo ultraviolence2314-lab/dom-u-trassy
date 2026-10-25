@@ -231,7 +231,7 @@ body{font-family:var(--f-mono);-webkit-user-select:none;user-select:none;-webkit
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js"></script>
 <script src="net.js"></script>
 <script>
 (() => {
@@ -913,7 +913,7 @@ function pickNick() {
 }
 async function joinRoom(code, create) {
   $('createBtn').disabled = $('joinBtn').disabled = true;
-  $('netNote').textContent = create ? 'Создаю комнату…' : 'Подключаюсь к комнате…';
+  $('netNote').textContent = (create ? 'Создаю комнату…' : 'Подключаюсь к комнате…') + ' Обычно это пара секунд, в медленной сети — до полуминуты.';
   try { NET.rm = await DomNet.open(code, create); }
   catch (e) {
     $('createBtn').disabled = $('joinBtn').disabled = false;
