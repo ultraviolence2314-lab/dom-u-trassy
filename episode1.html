@@ -1,0 +1,1479 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Дом у трассы</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Mono&family=PT+Sans+Narrow:wght@400;700&display=swap">
+<style>
+/* Один экран: 3D-сцена в низком разрешении, поверх — тонкий HUD как у старой видеокассеты. Тёмная тема — осознанно единственная. */
+:root{
+  --ink:#08090b;
+  --paper:#dcd6c6;
+  --dim:#8b8676;
+  --blood:#b8382a;
+  --glass:rgba(16,18,22,.86);
+  --line:rgba(220,214,198,.18);
+  --p1:#c9583f;
+  --p2:#4f86c9;
+  --p3:#c9a83f;
+  --f-head:"PT Sans Narrow","Arial Narrow",system-ui,sans-serif;
+  --f-mono:"PT Mono",ui-monospace,"Courier New",monospace;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--ink);color:var(--paper);overflow:hidden}
+body{font-family:var(--f-mono);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#app{position:fixed;inset:0;background:var(--ink)}
+#c{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;display:block}
+#fx{position:absolute;inset:0;pointer-events:none;
+  background:
+   radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.75) 100%),
+   repeating-linear-gradient(to bottom,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);}
+#grain{position:absolute;inset:-50%;pointer-events:none;opacity:.13;mix-blend-mode:screen;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  animation:grain .5s steps(4) infinite}
+@keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-7%,4%)}50%{transform:translate(5%,-6%)}75%{transform:translate(-3%,7%)}100%{transform:translate(6%,2%)}}
+@media (prefers-reduced-motion:reduce){#grain{animation:none}}
+
+#peep{position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(circle at 50% 50%,transparent 0,transparent 26vmin,rgba(0,0,0,.7) 31vmin,#000 35vmin)}
+#slats{position:absolute;inset:0;pointer-events:none;
+  background:
+   linear-gradient(to right,#000 0,#000 9%,transparent 16%,transparent 47%,#000 49%,#000 51%,transparent 53%,transparent 84%,#000 91%),
+   repeating-linear-gradient(to bottom,rgba(4,3,2,.96) 0 3.4vh,rgba(4,3,2,.4) 3.4vh 4vh,transparent 4vh 7.6vh)}
+
+#hud{position:absolute;inset:0;pointer-events:none}
+#obj{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));max-width:min(380px,60vw);
+  font-size:13px;line-height:1.45;text-shadow:0 1px 2px #000}
+#obj h2,#team h2{margin:0 0 4px;font:700 11px/1 var(--f-mono);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+#obj ul,#team ul{list-style:none;margin:0;padding:0;display:grid;gap:3px}
+#obj li{padding-left:18px;position:relative}
+#obj li::before{content:"";position:absolute;left:0;top:.42em;width:9px;height:9px;border:1px solid var(--paper);opacity:.8}
+#obj li.done{color:var(--dim);text-decoration:line-through}
+#obj li.done::before{background:var(--dim);border-color:var(--dim)}
+#clock{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));font-size:15px;letter-spacing:.08em;text-shadow:0 1px 2px #000;font-variant-numeric:tabular-nums}
+#clock small{display:block;font-size:10px;color:var(--dim);letter-spacing:.2em;text-align:right}
+#team{position:absolute;top:calc(56px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));font-size:12px;text-align:right;text-shadow:0 1px 2px #000}
+#team li{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+#team i{display:inline-block;width:8px;height:8px;border-radius:50%}
+#team em{font-style:normal;color:var(--dim)}
+#cross{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--paper);opacity:.55;transition:all .12s}
+#cross.on{width:14px;height:14px;margin:-7px 0 0 -7px;background:transparent;border:1.5px solid var(--paper);opacity:.9}
+#prompt{position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);font-size:14px;white-space:nowrap;text-shadow:0 1px 3px #000,0 0 8px #000}
+#prompt b{display:inline-block;min-width:1.4em;padding:0 5px;margin-right:6px;border:1px solid var(--paper);font-weight:400;text-align:center}
+#prompt.muted{color:var(--dim)}
+#subs{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(760px,calc(100% - 32px));text-align:center;
+  font:400 19px/1.35 var(--f-head);text-shadow:0 1px 3px #000,0 0 10px #000;text-wrap:balance}
+#subs .who{font-weight:700;letter-spacing:.04em;margin-right:.35em}
+#subs .who.voice{color:var(--blood)}
+#subs .thought{font-style:italic;color:#c4bfb0}
+#hint{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));font-size:12px;color:var(--dim);max-width:70vw}
+.phone{position:absolute;top:calc(48px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));width:min(280px,72vw);z-index:2;
+  background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:10px 12px 12px;
+  transform:translateX(calc(100% + 40px));opacity:0;transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .3s}
+.phone.show{transform:none;opacity:1}
+.phone .top{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);letter-spacing:.06em;margin-bottom:5px}
+.phone .from{font:700 15px/1.2 var(--f-head);color:var(--paper);margin-bottom:3px}
+.phone .text{font:400 15px/1.35 var(--f-head)}
+#breath{position:absolute;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:grid;gap:6px;justify-items:center;font-size:12px;color:var(--dim);letter-spacing:.12em;text-transform:uppercase;text-align:center}
+#breath .bar{width:min(240px,60vw);height:5px;background:rgba(255,255,255,.12)}
+#breath .fill{height:100%;width:100%;background:var(--paper);transition:width .1s linear}
+#breath.warn span{color:var(--blood);animation:pulse .6s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.4}to{opacity:1}}
+
+#scare{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;z-index:30}
+
+.screen{position:absolute;inset:0;z-index:20;display:grid;place-items:center;overflow-y:auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px;
+  background:linear-gradient(to bottom,rgba(8,9,11,.72),rgba(8,9,11,.94));-webkit-user-select:text;user-select:text}
+.card{width:min(560px,100%);display:grid;gap:18px}
+.eyebrow{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--dim)}
+.screen h1{margin:0;font:700 clamp(46px,11vw,84px)/.9 var(--f-head);letter-spacing:.06em;text-transform:uppercase;text-wrap:balance}
+.screen h1 span{color:var(--blood)}
+.screen p{margin:0;font:400 18px/1.45 var(--f-head);color:#c9c3b3;max-width:62ch}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px;color:var(--dim);align-items:baseline}
+.keys kbd{font:inherit;color:var(--paper);border:1px solid var(--line);padding:1px 6px;justify-self:start;white-space:nowrap}
+.warn{font-size:12px;color:var(--dim);border-left:2px solid var(--blood);padding-left:10px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.btn{font:700 15px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink);background:var(--paper);border:1px solid var(--paper);padding:14px 22px;cursor:pointer}
+.btn:hover{background:#fff}
+.btn.ghost{background:transparent;color:var(--paper);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--paper)}
+.btn:disabled{opacity:.35;cursor:default}
+.btn:focus-visible,.inp:focus-visible{outline:2px solid var(--blood);outline-offset:3px}
+.inp{font:400 15px/1 var(--f-mono);color:var(--paper);background:rgba(255,255,255,.05);border:1px solid var(--line);padding:12px 12px;min-width:0}
+.field{display:grid;gap:6px}
+.field label{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+.code-in{width:9ch;text-transform:uppercase;letter-spacing:.3em}
+.note{font-size:12px;color:var(--dim);line-height:1.5}
+.code{font:700 clamp(54px,14vw,96px)/1 var(--f-mono);letter-spacing:.3em}
+.players{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.players li{display:flex;align-items:center;gap:10px;font:400 18px/1.2 var(--f-head)}
+.players i{width:12px;height:12px;border-radius:50%;flex:none}
+.players em{font:400 12px/1 var(--f-mono);color:var(--dim);font-style:normal}
+.players .empty{color:var(--dim)}
+.rec{position:absolute;top:calc(16px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));font-size:13px;letter-spacing:.1em;color:var(--paper)}
+.rec::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--blood);margin-right:8px;animation:pulse 1s steps(2) infinite}
+.endnum{font-size:12px;color:var(--dim);letter-spacing:.2em;text-transform:uppercase}
+.back{font-size:12px;color:var(--dim);text-decoration:none;letter-spacing:.08em;justify-self:start}
+.back:hover,.back:focus-visible{color:var(--paper)}
+
+#touch{position:absolute;inset:0;z-index:10;touch-action:none}
+#knob{position:absolute;width:110px;height:110px;margin:-55px 0 0 -55px;border:1px solid var(--line);border-radius:50%;pointer-events:none}
+#knob i{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(220,214,198,.25)}
+.tbtns{position:absolute;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:flex-end}
+.tbtn{width:64px;height:64px;border-radius:50%;border:1px solid var(--line);background:rgba(16,18,22,.55);color:var(--paper);font:700 12px/1.1 var(--f-mono);display:grid;place-items:center;text-align:center}
+.tbtn.big{width:78px;height:78px;font-size:18px}
+.tbtn:active{background:rgba(220,214,198,.25)}
+</style>
+</head>
+<body>
+
+
+<div id="app">
+  <canvas id="c"></canvas>
+  <div id="fx"><div id="grain"></div></div>
+  <div id="peep" hidden></div>
+  <div id="slats" hidden></div>
+
+  <div id="hud" hidden>
+    <div id="obj" hidden><h2>Задачи</h2><ul id="objList"></ul></div>
+    <div id="clock"><span id="clockT">23:12</span><small>СБ · 24 ОКТ</small></div>
+    <div id="team" hidden><h2 id="teamCode"></h2><ul id="teamList"></ul></div>
+    <div id="cross"></div>
+    <div id="prompt"></div>
+    <div id="subs"></div>
+    <div id="hint"></div>
+    <div class="phone" id="phone">
+      <div class="top"><span>СООБЩЕНИЕ</span><span id="phTime">23:12</span></div>
+      <div class="from" id="phFrom"></div>
+      <div class="text" id="phText"></div>
+    </div>
+    <div id="breath" hidden><div class="bar"><div class="fill" id="breathFill"></div></div><span id="breathTxt">Пробел — затаить дыхание</span></div>
+  </div>
+
+  <div id="touch" hidden>
+    <div id="knob" hidden><i id="knobI"></i></div>
+    <div class="tbtns">
+      <button class="tbtn" id="tFlash" type="button">ФОНАРЬ</button>
+      <button class="tbtn" id="tBreath" type="button">НЕ<br>ДЫШАТЬ</button>
+      <button class="tbtn big" id="tAct" type="button">E</button>
+    </div>
+  </div>
+
+  <canvas id="scare" width="160" height="120" hidden></canvas>
+
+  <div class="screen" id="title">
+    <div class="rec">REC 23:12</div>
+    <div class="card">
+      <a class="back" href="index.html">← Все эпизоды</a>
+      <div class="eyebrow">Эпизод 1 · Суббота, 23:12 · пос. Озерки</div>
+      <h1>Дом у <span>трассы</span></h1>
+      <p>Тебе семнадцать. Родители уехали на дачу до завтрашнего обеда. Можно остаться одному с котом Барсиком, а можно позвать двоих друзей с ночёвкой. До трассы метров триста, до соседей чуть дальше. Обычная ночь: покормить кота, запереть дверь, лечь спать.</p>
+      <div class="keys" id="keysDesk">
+        <kbd>W A S D</kbd><span>ходить</span>
+        <kbd>Мышь</kbd><span>смотреть (кликни по экрану)</span>
+        <kbd>E</kbd><span>действие</span>
+        <kbd>F</kbd><span>фонарик, когда найдёшь</span>
+        <kbd>Пробел</kbd><span>затаить дыхание в укрытии</span>
+      </div>
+      <div class="keys" id="keysTouch" hidden>
+        <kbd>Левая половина</kbd><span>ходить</span>
+        <kbd>Правая половина</kbd><span>смотреть</span>
+        <kbd>E</kbd><span>действие</span>
+      </div>
+      <div class="warn">Играй в наушниках. В игре есть скримеры и резкие громкие звуки.</div>
+      <div class="field"><label for="nick">Имя в игре</label><input class="inp" id="nick" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Например, Саня"></div>
+      <div class="row">
+        <button class="btn" id="soloBtn" type="button">Играть одному</button>
+        <button class="btn ghost" id="createBtn" type="button" disabled>Позвать друзей</button>
+      </div>
+      <div class="row">
+        <input class="inp code-in" id="codeIn" maxlength="4" autocomplete="off" spellcheck="false" placeholder="КОД" aria-label="Код комнаты друга">
+        <button class="btn ghost" id="joinBtn" type="button" disabled>Войти по коду</button>
+      </div>
+      <div class="note" id="netNote">Проверяю, можно ли играть вместе…</div>
+    </div>
+  </div>
+
+  <div class="screen" id="lobby" hidden>
+    <div class="card">
+      <div class="eyebrow">Код комнаты</div>
+      <div class="code" id="lobbyCode">----</div>
+      <p>Скажи код друзьям. Они открывают эту же игру, вводят код и нажимают «Войти по коду». В доме помещается трое.</p>
+      <ul class="players" id="lobbyList"></ul>
+      <div class="row">
+        <button class="btn" id="goBtn" type="button">Начать</button>
+        <button class="btn ghost" id="copyBtn" type="button">Скопировать код</button>
+      </div>
+      <div class="note" id="lobbyNote"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="pause" hidden>
+    <div class="card">
+      <div class="eyebrow">Пауза</div>
+      <p id="pauseText">Кликни, чтобы вернуться в дом.</p>
+    </div>
+  </div>
+
+  <div class="screen" id="end" hidden>
+    <div class="card">
+      <div class="endnum" id="endNum"></div>
+      <h1 id="endTitle"></h1>
+      <p id="endText"></p>
+      <button class="btn" id="againBtn" type="button">Ещё раз</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="net.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+if (TOUCH) { $('keysDesk').hidden = true; $('keysTouch').hidden = false; }
+
+/* ---------- рендер ---------- */
+const canvas = $('c');
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false }); }
+catch (e) { $('title').querySelector('.card').innerHTML = '<h1>Нет WebGL</h1><p>Браузер не смог включить 3D-графику. Попробуй открыть страницу в Chrome или Safari на компьютере.</p>'; return; }
+renderer.setPixelRatio(1);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x040507);
+scene.fog = new THREE.FogExp2(0x040507, 0.072);
+
+const camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.05, 140);
+camera.rotation.order = 'YXZ';
+scene.add(camera);
+const peepCam = new THREE.PerspectiveCamera(105, 16 / 9, 0.05, 60);
+peepCam.position.set(6, 1.62, 10.12);
+peepCam.lookAt(6, 2.3, 20);
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  const k = Math.min(1, 300 / h);
+  renderer.setSize(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k)), false);
+  camera.aspect = peepCam.aspect = w / h;
+  camera.updateProjectionMatrix(); peepCam.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+/* ---------- текстуры (рисуем сами, пиксельные) ---------- */
+function mkTex(size, draw, w) {
+  const c = document.createElement('canvas'); c.width = w || size; c.height = size;
+  const g = c.getContext('2d'); draw(g, w || size, size);
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.userData = { canvas: c, g };
+  return t;
+}
+function speckle(g, w, h, n, a) {
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = Math.random() < .55 ? `rgba(0,0,0,${a * Math.random()})` : `rgba(255,255,255,${a * .5 * Math.random()})`;
+    g.fillRect(Math.random() * w | 0, Math.random() * h | 0, 1, 1);
+  }
+}
+const TX = {
+  wall: mkTex(64, (g, s) => {
+    g.fillStyle = '#6c674f'; g.fillRect(0, 0, s, s);
+    g.fillStyle = '#625d45'; for (let x = 0; x < s; x += 16) g.fillRect(x, 0, 7, s);
+    g.fillStyle = '#857d5f';
+    for (let y = 5; y < s; y += 16) for (let x = 9; x < s; x += 16) {
+      g.fillRect(x + 2, y, 1, 1); g.fillRect(x + 1, y + 1, 3, 1); g.fillRect(x, y + 2, 5, 1); g.fillRect(x + 1, y + 3, 3, 1); g.fillRect(x + 2, y + 4, 1, 1);
+    }
+    speckle(g, s, s, 1100, .28);
+  }),
+  wood: mkTex(64, (g, s) => {
+    for (let y = 0; y < s; y += 8) {
+      const v = 70 + Math.random() * 25 | 0;
+      g.fillStyle = `rgb(${v + 30},${v * .62 | 0},${v * .35 | 0})`; g.fillRect(0, y, s, 8);
+      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, y + 7, s, 1);
+      g.fillRect(Math.random() * s | 0, y, 1, 7);
+      for (let i = 0; i < 6; i++) { g.fillStyle = 'rgba(40,20,5,.35)'; g.fillRect(Math.random() * s | 0, y + 1 + (Math.random() * 6 | 0), 4 + Math.random() * 8 | 0, 1); }
+    }
+    speckle(g, s, s, 500, .2);
+  }),
+  dwood: mkTex(64, (g, s) => {
+    g.fillStyle = '#3a2516'; g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(${Math.random() < .5 ? '20,10,4' : '90,60,35'},.4)`; g.fillRect(0, Math.random() * s | 0, s, 1); }
+    speckle(g, s, s, 400, .25);
+  }),
+  tile: mkTex(64, (g, s) => {
+    g.fillStyle = '#7b7568'; g.fillRect(0, 0, s, s);
+    for (let y = 0; y < s; y += 16) for (let x = 0; x < s; x += 16) {
+      const v = 175 + Math.random() * 14 | 0;
+      g.fillStyle = (x + y) % 32 ? `rgb(${v},${v - 6},${v - 22})` : `rgb(${v - 40},${v - 52},${v - 50})`;
+      g.fillRect(x + 1, y + 1, 15, 15);
+    }
+    speckle(g, s, s, 700, .22);
+  }),
+  ceil: mkTex(64, (g, s) => { g.fillStyle = '#a6a397'; g.fillRect(0, 0, s, s); speckle(g, s, s, 900, .18); }),
+  lino: mkTex(64, (g, s) => {
+    g.fillStyle = '#5a4532'; g.fillRect(0, 0, s, s);
+    g.fillStyle = '#4b3829'; for (let y = 0; y < s; y += 16) for (let x = (y / 16 % 2) * 16; x < s; x += 32) g.fillRect(x, y, 16, 16);
+    speckle(g, s, s, 900, .3);
+  }),
+  carpet: mkTex(64, (g, s) => {
+    g.fillStyle = '#5b1b17'; g.fillRect(0, 0, s, s);
+    g.fillStyle = '#7a2a1f';
+    for (let y = 0; y < s; y += 16) for (let x = 0; x < s; x += 16) { g.beginPath(); g.moveTo(x + 8, y + 1); g.lineTo(x + 15, y + 8); g.lineTo(x + 8, y + 15); g.lineTo(x + 1, y + 8); g.fill(); }
+    g.fillStyle = '#b08a45'; for (let y = 6; y < s; y += 16) for (let x = 6; x < s; x += 16) g.fillRect(x, y, 4, 4);
+    g.fillStyle = '#1d2a3a'; g.fillRect(0, 0, s, 3); g.fillRect(0, s - 3, s, 3); g.fillRect(0, 0, 3, s); g.fillRect(s - 3, 0, 3, s);
+    speckle(g, s, s, 700, .3);
+  }),
+  fabric: mkTex(64, (g, s) => {
+    for (let x = 0; x < s; x += 4) { const v = 50 + Math.sin(x / 4) * 12 | 0; g.fillStyle = `rgb(${v + 30},${v * .45 | 0},${v * .4 | 0})`; g.fillRect(x, 0, 4, s); }
+    speckle(g, s, s, 400, .2);
+  }),
+  sofa: mkTex(32, (g, s) => { g.fillStyle = '#3e4a39'; g.fillRect(0, 0, s, s); g.fillStyle = '#4a5843'; for (let y = 0; y < s; y += 4) g.fillRect(0, y, s, 1); speckle(g, s, s, 300, .3); }),
+  grass: mkTex(64, (g, s) => {
+    g.fillStyle = '#1a2116'; g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 1600; i++) { const v = Math.random(); g.fillStyle = v < .5 ? '#0e140c' : v < .8 ? '#26311d' : '#3a3a22'; g.fillRect(Math.random() * s | 0, Math.random() * s | 0, 1, 1 + (Math.random() * 2 | 0)); }
+  }),
+  asphalt: mkTex(64, (g, s) => { g.fillStyle = '#1f2123'; g.fillRect(0, 0, s, s); speckle(g, s, s, 1600, .35); }),
+  face: mkTex(32, (g, s) => {
+    g.fillStyle = '#cfc9ba'; g.fillRect(0, 0, s, s);
+    g.fillStyle = 'rgba(70,60,50,.35)'; g.fillRect(0, 0, 4, s); g.fillRect(s - 4, 0, 4, s);
+    g.fillStyle = '#8d877a'; g.fillRect(5, 7, 9, 10); g.fillRect(18, 8, 9, 10);
+    g.fillStyle = '#000'; g.fillRect(7, 9, 5, 7); g.fillRect(20, 10, 5, 7);
+    g.fillStyle = '#fff'; g.fillRect(9, 12, 1, 1); g.fillRect(22, 13, 1, 1);
+    g.fillStyle = '#7a7366'; g.fillRect(15, 15, 2, 4);
+    g.fillStyle = '#0a0504'; g.fillRect(11, 21, 10, 8); g.fillRect(12, 20, 8, 1); g.fillRect(12, 29, 8, 1);
+    g.fillStyle = '#9a9385'; for (let x = 12; x < 20; x += 2) g.fillRect(x, 21, 1, 2);
+    g.fillStyle = 'rgba(40,20,15,.6)'; g.fillRect(8, 17, 1, 6); g.fillRect(23, 18, 1, 5);
+    speckle(g, s, s, 160, .35);
+  }),
+  skin: mkTex(16, (g, s) => {
+    g.fillStyle = '#b89478'; g.fillRect(0, 0, s, s);
+    g.fillStyle = '#2a1d14'; g.fillRect(0, 0, s, 4); g.fillRect(4, 7, 2, 2); g.fillRect(10, 7, 2, 2);
+    g.fillStyle = '#8a5a48'; g.fillRect(6, 12, 4, 1);
+  }),
+  poster: mkTex(32, (g, s) => {
+    g.fillStyle = '#20263a'; g.fillRect(0, 0, s, s); g.fillStyle = '#c94'; g.fillRect(4, 4, 24, 3);
+    g.fillStyle = '#ddd'; g.fillRect(9, 11, 14, 14); g.fillStyle = '#20263a'; g.fillRect(12, 14, 8, 8); speckle(g, s, s, 120, .4);
+  })
+};
+TX.face.wrapS = TX.face.wrapT = THREE.ClampToEdgeWrapping;
+TX.skin.wrapS = TX.skin.wrapT = THREE.ClampToEdgeWrapping;
+
+// ТВ: настроечная таблица и помехи
+const tvTest = mkTex(48, (g, w, h) => {
+  const bars = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'];
+  bars.forEach((c, i) => { g.fillStyle = c; g.fillRect(i * w / 7 | 0, 0, Math.ceil(w / 7), h * .68 | 0); });
+  g.fillStyle = '#111'; g.fillRect(0, h * .68 | 0, w, h);
+  g.fillStyle = '#eee'; g.fillRect(w * .2 | 0, h * .76 | 0, w * .25 | 0, h * .12 | 0);
+  g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.arc(w / 2, h / 2, h * .36, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = '#fff'; g.fillRect(w / 2 | 0, 4, 1, h - 8); g.fillRect(6, h / 2 | 0, w - 12, 1);
+}, 64);
+const tvStatic = mkTex(48, (g, w, h) => { g.fillStyle = '#777'; g.fillRect(0, 0, w, h); }, 64);
+const tvImg = tvStatic.userData.g.createImageData(64, 48);
+function updStatic() {
+  const d = tvImg.data;
+  for (let i = 0; i < d.length; i += 4) { const v = Math.random() * 255 | 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+  tvStatic.userData.g.putImageData(tvImg, 0, 0); tvStatic.needsUpdate = true;
+}
+
+/* ---------- материалы и геометрия ---------- */
+const ph = (map, color = 0xffffff, extra = {}) => new THREE.MeshPhongMaterial(Object.assign({ map, color, shininess: 3, specular: 0x080808 }, extra));
+const lam = (map, color = 0xffffff) => new THREE.MeshLambertMaterial({ map, color });
+const M = {
+  wall: ph(TX.wall), wood: ph(TX.wood), dwood: ph(TX.dwood), tile: ph(TX.tile), ceil: ph(TX.ceil), lino: ph(TX.lino),
+  carpet: ph(TX.carpet), fabric: ph(TX.fabric, 0xffffff, { side: THREE.DoubleSide }), sofa: ph(TX.sofa),
+  frame: ph(null, 0xb3ac9a), white: ph(null, 0xc8c5ba), cream: ph(null, 0xb9b09a), metal: ph(null, 0x6b6e72, { shininess: 40, specular: 0x333333 }),
+  black: ph(null, 0x111111), red: ph(null, 0x7a2222), orange: ph(null, 0xb5651d), blue: ph(null, 0x2b3b5c), bed: ph(TX.fabric, 0x8899aa),
+  grass: lam(TX.grass), asphalt: lam(TX.asphalt), tree: lam(null, 0x0d1810), trunk: lam(TX.dwood, 0x777777), fence: lam(TX.dwood, 0x8a8a8a),
+  house: lam(null, 0x24272a), concrete: lam(TX.asphalt, 0x9a9a9a),
+  glass: new THREE.MeshBasicMaterial({ color: 0x9fb3c8, transparent: true, opacity: .1, depthWrite: false, side: THREE.DoubleSide }),
+  print: new THREE.MeshBasicMaterial({ color: 0x1a120c, transparent: true, opacity: .8, depthWrite: false })
+};
+const colliders = [];
+function scaleUV(geo, su, sv) { const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv); uv.needsUpdate = true; }
+function boxUV(geo, w, h, d) {
+  const uv = geo.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0], uv.getY(i) * dims[f][1]); }
+  uv.needsUpdate = true;
+}
+function box(w, h, d, x, y, z, mat, o = {}) {
+  const g = new THREE.BoxGeometry(w, h, d); if (o.uv !== false) boxUV(g, w, h, d);
+  const m = new THREE.Mesh(g, mat); m.position.set(x, y, z); (o.parent || scene).add(m);
+  if (o.collide) colliders.push({ x1: x - w / 2, x2: x + w / 2, z1: z - d / 2, z2: z + d / 2, m });
+  return m;
+}
+const boxB = (w, h, d, x, y0, z, mat, o) => box(w, h, d, x, y0 + h / 2, z, mat, o);
+function plane(w, d, x, y, z, mat, s = 1) {
+  const g = new THREE.PlaneGeometry(w, d); scaleUV(g, w / s, d / s);
+  const m = new THREE.Mesh(g, mat); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); scene.add(m); return m;
+}
+function it(obj, label) { obj.userData.it = { label }; return obj; }
+
+/* ---------- дом ---------- */
+const H = 2.7, T = 0.14;
+const WIN = { curtains: [] };
+function windowAt(axis, fixed, o) {
+  const len = o.b - o.a, c = (o.a + o.b) / 2, g = new THREE.Group();
+  if (axis === 'x') g.position.set(c, 1.45, fixed); else { g.position.set(fixed, 1.45, c); g.rotation.y = Math.PI / 2; }
+  scene.add(g);
+  box(len + .1, .07, .16, 0, .55, 0, M.frame, { parent: g }); box(len + .1, .07, .2, 0, -.55, 0, M.frame, { parent: g });
+  box(.07, 1.1, .16, -len / 2, 0, 0, M.frame, { parent: g }); box(.07, 1.1, .16, len / 2, 0, 0, M.frame, { parent: g });
+  const sash = new THREE.Group(); sash.position.x = -len / 2; g.add(sash);
+  const gl = new THREE.Mesh(new THREE.PlaneGeometry(len - .06, 1.04), M.glass); gl.position.x = len / 2; sash.add(gl);
+  box(.05, 1.04, .06, len / 2, 0, 0, M.frame, { parent: sash }); box(len - .06, .05, .06, len / 2, .1, 0, M.frame, { parent: sash });
+  if (o.id === 'living') { // невидимая мишень, чтобы окно легко было «поймать» прицелом
+    const hit = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.1), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+    hit.position.z = .3; g.add(hit);
+  }
+  const ins = o.inside || 1;
+  [-1, 1].forEach(sd => {
+    const cu = new THREE.Mesh(new THREE.PlaneGeometry(.5, 2.05), M.fabric);
+    cu.position.set(sd * (len / 2 - .02), .07, .13 * ins); g.add(cu);
+    if (o.id === 'living') WIN.curtains.push(cu);
+  });
+  if (o.id) WIN[o.id] = { g, sash, glass: gl };
+}
+function wall(axis, fixed, from, to, ops = []) {
+  const piece = (a, b, y0, y1, col) => {
+    const len = b - a, h = y1 - y0, c = (a + b) / 2, y = (y0 + y1) / 2;
+    if (axis === 'x') box(len, h, T, c, y, fixed, M.wall, { collide: col });
+    else box(T, h, len, fixed, y, c, M.wall, { collide: col });
+  };
+  let cur = from;
+  for (const o of ops) {
+    if (o.a > cur) piece(cur, o.a, 0, H, true);
+    if (o.type === 'door') piece(o.a, o.b, 2.1, H, false);
+    else { piece(o.a, o.b, 0, .9, true); piece(o.a, o.b, 2.0, H, false); windowAt(axis, fixed, o); }
+    cur = o.b;
+  }
+  if (cur < to) piece(cur, to, 0, H, true);
+}
+wall('x', 0, 0, 12, [{ a: 7.5, b: 9, type: 'win', id: 'living', inside: 1 }]);
+wall('x', 10, 0, 12, [{ a: 5.5, b: 6.5, type: 'door' }]);
+wall('z', 0, 0, 10, [{ a: 2, b: 3.5, type: 'win', id: 'kitchen', inside: 1 }]);
+wall('z', 12, 0, 10, [{ a: 2, b: 3.5, type: 'win', inside: -1 }, { a: 7.5, b: 9, type: 'win', id: 'bed', inside: -1 }]);
+wall('z', 4, 0, 6, [{ a: 4, b: 5, type: 'door' }]);
+wall('z', 4, 6, 10, [{ a: 7.5, b: 8.5, type: 'door' }]);
+wall('x', 6, 0, 4);
+wall('x', 6, 4, 8, [{ a: 5.5, b: 6.5, type: 'door' }]);
+wall('x', 6, 8, 12);
+wall('z', 8, 6, 10, [{ a: 7.5, b: 8.5, type: 'door' }]);
+
+plane(4, 6, 2, 0.001, 3, M.tile);
+plane(8, 6, 8, 0.001, 3, M.wood, 1.5);
+plane(4, 4, 6, 0.001, 8, M.lino);
+plane(4, 4, 10, 0.001, 8, M.wood, 1.5);
+plane(4, 4, 2, 0.001, 8, M.tile);
+plane(3.2, 2.4, 10.2, 0.004, 3.1, M.carpet, 3.2);
+plane(.9, 3.2, 6, 0.004, 8.1, M.carpet, 3.2);
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(12, 10), M.ceil); scaleUV(ceil.geometry, 12, 10);
+ceil.rotation.x = Math.PI / 2; ceil.position.set(6, H, 5); scene.add(ceil);
+
+const doorG = new THREE.Group(); scene.add(doorG);
+box(1.0, 2.1, .07, 6, 1.05, 10, M.dwood, { parent: doorG, collide: true });
+box(.05, .05, .1, 6.38, 1.0, 9.94, M.metal, { parent: doorG });
+box(.03, .03, .02, 6, 1.62, 9.96, M.black, { parent: doorG });
+box(.08, .14, .04, 6.38, 1.15, 9.95, M.metal, { parent: doorG });
+const bathDoor = box(.07, 2.1, 1.0, 4, 1.05, 8, M.cream, { collide: true });
+box(.1, .05, .05, 4.06, 1.0, 8.38, M.metal);
+
+/* ---------- мебель ---------- */
+boxB(2.9, .9, .6, 1.55, 0, .37, M.cream, { collide: true });
+box(2.9, .04, .64, 1.55, .92, .37, M.tile);
+boxB(.7, .04, .5, 2.55, .94, .37, M.black);
+[[2.38, .25], [2.72, .25], [2.38, .5], [2.72, .5]].forEach(([x, z]) => { const b = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .015, 8), M.metal); b.position.set(x, .99, z); scene.add(b); });
+boxB(2.9, .6, .35, 1.55, 1.55, .25, M.cream);
+const backs = new THREE.Mesh(new THREE.PlaneGeometry(2.9, .6), M.tile); scaleUV(backs.geometry, 2.9, .6); backs.position.set(1.55, 1.24, .08); scene.add(backs);
+it(boxB(.68, 1.8, .66, 3.55, 0, .42, M.white, { collide: true }), () => ({ text: 'Холодильник гудит. Есть не хочется' }));
+box(.03, .5, .04, 3.3, 1.3, .77, M.metal);
+boxB(1.0, .05, .8, 1.8, .72, 3.6, M.dwood, { collide: true });
+[[1.4, 3.3], [2.2, 3.3], [1.4, 3.9], [2.2, 3.9]].forEach(([x, z]) => boxB(.05, .72, .05, x, 0, z, M.dwood));
+boxB(.36, .45, .36, 1.8, 0, 2.85, M.dwood); boxB(.36, .45, .36, 1.8, 0, 4.35, M.dwood);
+it(box(.5, .16, .03, 1.2, .76, .69, M.cream), () => W.step === 'dark' && !W.flashBy
+  ? { text: 'Взять фонарик', action: () => req('flash') } : { text: 'Ящик со всякой мелочью' });
+box(.14, .03, .03, 1.2, .76, .71, M.metal);
+const food = it(boxB(.22, .32, .12, .55, .94, .4, M.orange), () => !W.food && !W.fed ? { text: 'Взять корм для кота', action: () => req('food') } : null);
+const bowl = new THREE.Mesh(new THREE.CylinderGeometry(.12, .09, .06, 10), M.red); bowl.position.set(3.4, .03, 5.6); scene.add(bowl);
+const bowlFood = new THREE.Mesh(new THREE.CylinderGeometry(.1, .1, .02, 10), M.orange); bowlFood.position.set(3.4, .06, 5.6); bowlFood.visible = false; scene.add(bowlFood);
+it(bowl, () => W.fed ? { text: 'Барсик хрустит кормом' } : W.food ? { text: 'Насыпать корм', action: () => req('feed') } : { text: 'Миска Барсика. Пустая' });
+it(box(.03, .12, .08, 3.92, 1.25, 3.7, M.white), () => ({ text: W.kl ? 'Выключить свет' : 'Включить свет', action: () => req('kl') }));
+
+// зал
+boxB(3.0, 2.1, .5, 5.7, 0, .33, M.dwood, { collide: true }); // «стенка»
+for (let i = 0; i < 3; i++) { const gl = new THREE.Mesh(new THREE.PlaneGeometry(.8, .9), M.glass); gl.position.set(4.7 + i * 1.0, 1.45, .59); scene.add(gl); boxB(.7, .02, .3, 4.7 + i, 1.2, .38, M.cream); }
+boxB(.12, .2, .12, 4.5, 1.22, .4, M.white); boxB(.12, .16, .12, 4.8, 1.22, .4, M.blue); boxB(.12, .2, .12, 5.7, 1.22, .4, M.white);
+boxB(1.6, .5, .45, 10.2, 0, .32, M.dwood, { collide: true });
+const tvBody = boxB(.95, .62, .5, 10.2, .5, .36, M.black);
+const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(.76, .5), new THREE.MeshBasicMaterial({ map: tvTest }));
+tvScreen.position.set(10.2, .83, .615); scene.add(tvScreen);
+const tvMats = { test: tvScreen.material, stat: new THREE.MeshBasicMaterial({ map: tvStatic }), off: new THREE.MeshBasicMaterial({ color: 0x0b0c0c }) };
+const tvLabel = () => W.tv && W.pw ? { text: 'Выключить телевизор', action: () => req('tvoff') } : { text: 'Старый «Рубин»' };
+it(tvBody, tvLabel); it(tvScreen, tvLabel);
+boxB(2.4, .45, .9, 10.2, 0, 5.05, M.sofa, { collide: true });
+boxB(2.4, .5, .22, 10.2, .45, 5.4, M.sofa);
+boxB(.2, .25, .9, 9.0, .45, 5.05, M.sofa); boxB(.2, .25, .9, 11.4, .45, 5.05, M.sofa);
+boxB(1.0, .42, .55, 10.2, 0, 3.2, M.dwood, { collide: true });
+boxB(.06, 1.5, .06, 11.6, 0, 5.6, M.metal);
+const fl = new THREE.Mesh(new THREE.CylinderGeometry(.12, .22, .3, 8, 1, true), new THREE.MeshPhongMaterial({ color: 0xb9b09a, side: THREE.DoubleSide })); fl.position.set(11.6, 1.6, 5.6); scene.add(fl);
+
+// прихожая: шкаф для одежды, телефон, щиток
+const hallCloset = boxB(.6, 2.1, 1.1, 4.42, 0, 6.8, M.dwood, { collide: true });
+const hallDoor = boxB(.03, 2.04, 1.04, 4.735, .03, 6.8, M.dwood);
+box(.03, .14, .03, 4.76, 1.05, 7.2, M.metal);
+boxB(.4, .8, .5, 4.32, 0, 9.3, M.dwood, { collide: true });
+const phoneG = new THREE.Group(); phoneG.position.set(4.32, .8, 9.3); scene.add(phoneG);
+box(.2, .08, .22, 0, .04, 0, M.cream, { parent: phoneG }); box(.06, .05, .24, -.05, .1, 0, M.cream, { parent: phoneG });
+const phoneDial = new THREE.Mesh(new THREE.CylinderGeometry(.06, .06, .01, 10), M.black); phoneDial.position.set(.04, .085, 0); phoneG.add(phoneDial);
+it(phoneG, () => W.ring ? { text: 'Снять трубку', action: () => req('answer') }
+  : W.step === 'call' ? { text: 'Позвонить в 112', action: () => req('call112') } : { text: 'Домашний телефон' });
+it(box(.1, .5, .4, 7.9, 1.6, 6.6, M.metal), () => W.step === 'dark'
+  ? (W.flashBy ? { text: 'Включить автоматы', action: () => req('panel') } : { text: 'Ничего не видно. Нужен фонарик' })
+  : { text: 'Электрощиток' });
+it(bathDoor, () => W.prints ? { text: 'Заперто. Изнутри' } : { text: 'Ванная. Капает кран' });
+it(doorG, () => W.step === 'knock' ? { text: 'Посмотреть в глазок', action: () => req('peep') }
+  : !W.locked ? { text: 'Запереть дверь', action: () => req('lock') } : { text: 'Дверь заперта на ключ' });
+
+// спальня
+boxB(1.7, .42, 2.0, 11.05, 0, 7.1, M.dwood, { collide: true });
+it(boxB(1.6, .14, 1.9, 11.05, .42, 7.15, M.bed), () => ({ text: 'Спать пока рано' }));
+boxB(.6, .12, .35, 11.05, .56, 6.3, M.white);
+boxB(.4, .5, .4, 9.95, 0, 6.35, M.dwood, { collide: true });
+boxB(.12, .25, .12, 9.95, .5, 6.35, M.cream);
+boxB(1.2, .75, .55, 8.8, 0, 9.62, M.dwood, { collide: true });
+it(boxB(.42, .36, .4, 8.8, .75, 9.65, M.cream), () => ({ text: 'Старый компьютер. Выключен' }));
+const bedCloset = boxB(1.7, 2.1, .62, 10.85, 0, 9.62, M.dwood, { collide: true });
+const bedDoors = { bedL: boxB(.84, 2.04, .03, 10.43, .03, 9.3, M.dwood), bedR: boxB(.84, 2.04, .03, 11.27, .03, 9.3, M.dwood) };
+const poster = new THREE.Mesh(new THREE.PlaneGeometry(.6, .8), new THREE.MeshPhongMaterial({ map: TX.poster })); poster.position.set(9.0, 1.6, 6.08); scene.add(poster);
+
+// укрытия
+const SPOTS = {
+  hall: { x: 4.42, z: 6.8, yaw: -Math.PI / 2, listen: [5.5, 9], door: hallDoor },
+  bedL: { x: 10.43, z: 9.66, yaw: -.1, listen: [18, 25], door: bedDoors.bedL },
+  bedR: { x: 11.27, z: 9.66, yaw: .3, listen: [18, 25], door: bedDoors.bedR }
+};
+function spotLabel(name) {
+  return () => {
+    if (W.step !== 'hide') return { text: 'Шкаф с одеждой' };
+    const who = W.spots[name];
+    if (who) return { text: `Здесь уже прячется ${nickOf(who)}` };
+    return { text: 'Спрятаться в шкаф', action: () => req('hide', name) };
+  };
+}
+it(hallCloset, spotLabel('hall')); it(hallDoor, spotLabel('hall'));
+it(bedDoors.bedL, spotLabel('bedL')); it(bedDoors.bedR, spotLabel('bedR'));
+it(bedCloset, () => spotLabel(W.spots.bedL ? 'bedR' : 'bedL')());
+
+// кот Барсик
+const cat = new THREE.Group(); const catM = ph(null, 0x9a6a3c);
+box(.2, .17, .36, 0, .1, 0, catM, { parent: cat, uv: false }); box(.15, .13, .13, 0, .24, .17, catM, { parent: cat, uv: false });
+box(.04, .05, .03, -.045, .32, .17, catM, { parent: cat, uv: false }); box(.04, .05, .03, .045, .32, .17, catM, { parent: cat, uv: false });
+box(.04, .04, .3, .07, .04, -.27, catM, { parent: cat, uv: false });
+scene.add(cat);
+it(cat, () => cat.visible ? { text: 'Погладить Барсика', action: petCat } : null);
+
+// следы
+const prints = new THREE.Group(); prints.visible = false; scene.add(prints);
+(() => {
+  const pts = [[8.2, .5], [8.0, 2.0], [7.0, 3.6], [6.0, 5.2], [6.0, 6.6], [5.2, 7.6], [4.4, 8.0]];
+  let side = 1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, az] = pts[i], [bx, bz] = pts[i + 1], L = Math.hypot(bx - ax, bz - az), n = Math.floor(L / .42);
+    const ang = Math.atan2(bx - ax, bz - az), px = Math.cos(ang), pz = -Math.sin(ang);
+    for (let k = 0; k < n; k++) {
+      const t = k / n, m = new THREE.Mesh(new THREE.PlaneGeometry(.11, .27), M.print);
+      m.rotation.x = -Math.PI / 2; m.rotation.z = ang + Math.PI;
+      m.position.set(ax + (bx - ax) * t + px * .09 * side, .01, az + (bz - az) * t + pz * .09 * side);
+      prints.add(m); side = -side;
+    }
+  }
+})();
+
+/* ---------- двор и дорога ---------- */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), M.grass); scaleUV(ground.geometry, 80, 80);
+ground.rotation.x = -Math.PI / 2; ground.position.set(6, -.02, 5); scene.add(ground);
+boxB(2.2, .14, 1.6, 6, -.02, 10.85, M.concrete, { uv: false });
+const road = new THREE.Mesh(new THREE.PlaneGeometry(200, 7), M.asphalt); scaleUV(road.geometry, 100, 3.5);
+road.rotation.x = -Math.PI / 2; road.position.set(6, 0, -26); scene.add(road);
+for (let x = -90; x < 100; x += 6) { const l = new THREE.Mesh(new THREE.PlaneGeometry(2.4, .14), lam(null, 0x8c8a7c)); l.rotation.x = -Math.PI / 2; l.position.set(x, .01, -26); scene.add(l); }
+(() => { // забор
+  const x1 = -11, x2 = 23, z1 = -14, z2 = 19;
+  const side = (ax, az, bx, bz) => {
+    const L = Math.hypot(bx - ax, bz - az), n = Math.round(L / 2.5);
+    for (let i = 0; i <= n; i++) { const t = i / n; boxB(.1, 1.3, .1, ax + (bx - ax) * t, 0, az + (bz - az) * t, M.fence, { uv: false }); }
+    [.4, 1.0].forEach(y => { if (ax === bx) boxB(.05, .1, L, ax, y, (az + bz) / 2, M.fence, { uv: false }); else boxB(L, .1, .05, (ax + bx) / 2, y, az, M.fence, { uv: false }); });
+  };
+  side(x1, z1, x2, z1); side(x1, z2, x2, z2); side(x1, z1, x1, z2); side(x2, z1, x2, z2);
+})();
+for (let i = 0; i < 70; i++) {
+  const a = Math.random() * Math.PI * 2, r = rand(17, 50), x = 6 + Math.cos(a) * r, z = 5 + Math.sin(a) * r;
+  if (Math.abs(z + 26) < 6) continue;
+  const h = rand(4, 8), tr = new THREE.Mesh(new THREE.ConeGeometry(h * .28, h, 6), M.tree); tr.position.set(x, h / 2 + .8, z); scene.add(tr);
+  boxB(.25, 1, .25, x, 0, z, M.trunk, { uv: false });
+}
+boxB(.12, 5, .12, -6.5, 0, 3, M.metal, { uv: false }); box(1.0, .08, .08, -6.05, 4.95, 3, M.metal, { uv: false });
+const streetBulb = new THREE.Mesh(new THREE.BoxGeometry(.3, .08, .18), new THREE.MeshBasicMaterial({ color: 0xffb867 })); streetBulb.position.set(-5.6, 4.88, 3); scene.add(streetBulb);
+const streetLight = new THREE.PointLight(0xffa04a, 1.5, 16, 1.4); streetLight.position.set(-5.6, 4.6, 3); scene.add(streetLight);
+boxB(7, 3.4, 7, -27, 0, -2, M.house, { uv: false });
+const roofN = new THREE.Mesh(new THREE.ConeGeometry(5.4, 2.4, 4), M.house); roofN.rotation.y = Math.PI / 4; roofN.position.set(-27, 4.6, -2); scene.add(roofN);
+const neighborWin = new THREE.Mesh(new THREE.PlaneGeometry(1.0, .8), new THREE.MeshBasicMaterial({ color: 0xd9a54a })); neighborWin.rotation.y = Math.PI / 2; neighborWin.position.set(-23.46, 1.7, -1); scene.add(neighborWin);
+const car = new THREE.Group(); scene.add(car);
+[-.6, .6].forEach(z => { const h = new THREE.Mesh(new THREE.SphereGeometry(.12, 6, 4), new THREE.MeshBasicMaterial({ color: 0xfff3d0 })); h.position.set(2.1, .7, z); car.add(h); });
+box(4.2, 1.1, 1.8, 0, .9, 0, M.house, { parent: car, uv: false });
+const carLight = new THREE.PointLight(0xfff0cc, 1.8, 26, 1.2); carLight.position.set(4, 1, 0); car.add(carLight);
+car.position.set(-200, 0, -24.5);
+let carT = 6, carDir = 1;
+
+/* ---------- свет ---------- */
+scene.add(new THREE.AmbientLight(0x10141c, 1));
+const moon = new THREE.DirectionalLight(0x34456b, .35); moon.position.set(-10, 20, -8); scene.add(moon);
+const RL = {};
+[['kitchen', 2, 3], ['living', 8, 3], ['hall', 6, 8], ['bed', 10, 8]].forEach(([k, x, z]) => {
+  const l = new THREE.PointLight(0xffdfab, k === 'bed' ? .75 : .95, 8.5, 1.4); l.position.set(x, 2.35, z); scene.add(l);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(.26, .2, 8, 1, true), new THREE.MeshPhongMaterial({ color: 0x8a7a55, side: THREE.DoubleSide }));
+  shade.position.set(x, 2.5, z); scene.add(shade);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(.06, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffe9b8 })); bulb.position.set(x, 2.4, z); scene.add(bulb);
+  RL[k] = { l, bulb, base: l.intensity };
+});
+const porch = new THREE.PointLight(0xffd9a0, .9, 7, 1.5); porch.position.set(6, 2.3, 10.6); scene.add(porch);
+const porchBulb = new THREE.Mesh(new THREE.BoxGeometry(.12, .16, .1), new THREE.MeshBasicMaterial({ color: 0xffe2b0 })); porchBulb.position.set(6.75, 2.3, 10.12); scene.add(porchBulb);
+const tvLight = new THREE.PointLight(0x9fb4ff, .5, 5, 1.5); tvLight.position.set(10.2, 1.0, 1.4); scene.add(tvLight);
+const police = new THREE.PointLight(0xff0000, 0, 14, 1.2); police.position.set(14, 1.6, 8.2); scene.add(police);
+const flash = new THREE.SpotLight(0xfff1d6, 0, 15, .5, .45, 1.2);
+flash.position.set(.18, -.12, 0); camera.add(flash); flash.target.position.set(0, -.05, -1); camera.add(flash.target);
+const rflash = new THREE.SpotLight(0xfff1d6, 0, 15, .5, .45, 1.2); scene.add(rflash); scene.add(rflash.target);
+
+/* ---------- фигура ---------- */
+const fig = (() => {
+  const g = new THREE.Group(), m = new THREE.MeshLambertMaterial({ color: 0x0b0b0e });
+  const add = (w, h, d, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); g.add(b); return b; };
+  add(.15, .92, .17, -.11, .46, 0); add(.15, .92, .17, .11, .46, 0);
+  add(.5, .76, .27, 0, 1.28, 0);
+  add(.11, .94, .12, -.31, 1.1, .03); add(.11, .94, .12, .31, 1.1, .03);
+  add(.12, .12, .12, 0, 1.7, 0);
+  const faceM = new THREE.MeshBasicMaterial({ map: TX.face, color: 0x9d998f });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(.27, .33, .27), [m, m, m, m, faceM, m]);
+  head.position.set(0, 1.88, .02); head.rotation.x = .1; g.add(head);
+  add(.33, .14, .33, 0, 2.06, -.02);
+  g.userData.head = head; g.visible = false; scene.add(g);
+  return g;
+})();
+function placeFig(x, y, z, ry) { fig.position.set(x, y, z); fig.rotation.y = ry; fig.visible = true; }
+
+/* ---------- друзья в доме ---------- */
+const COLORS = [0xc9583f, 0x4f86c9, 0xc9a83f], CSSCOL = ['var(--p1)', 'var(--p2)', 'var(--p3)'];
+const avatars = [0, 1, 2].map(i => {
+  const g = new THREE.Group(), jm = ph(null, COLORS[i]), pm = ph(null, 0x23252b);
+  box(.14, .85, .16, -.1, .43, 0, pm, { parent: g, uv: false }); box(.14, .85, .16, .1, .43, 0, pm, { parent: g, uv: false });
+  box(.42, .62, .24, 0, 1.17, 0, jm, { parent: g, uv: false });
+  box(.1, .6, .12, -.27, 1.18, 0, jm, { parent: g, uv: false }); box(.1, .6, .12, .27, 1.18, 0, jm, { parent: g, uv: false });
+  const skinM = new THREE.MeshPhongMaterial({ map: TX.skin }), hairM = ph(null, 0x2a1d14);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(.24, .26, .24), [hairM, hairM, hairM, skinM, skinM, hairM]);
+  head.position.y = 1.62; g.add(head);
+  const lc = document.createElement('canvas'); lc.width = 128; lc.height = 32;
+  const lt = new THREE.CanvasTexture(lc); lt.minFilter = THREE.LinearFilter;
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: lt, transparent: true, depthTest: false, fog: false }));
+  label.scale.set(.8, .2, 1); label.position.y = 2.0; g.add(label);
+  g.visible = false; scene.add(g);
+  return { g, head, lc, lt, nick: null, x: 0, z: 0, yaw: 0, p: 0, seen: false, stepAcc: 0 };
+});
+function setLabel(av, nick, i) {
+  if (av.nick === nick) return; av.nick = nick;
+  const g = av.lc.getContext('2d'); g.clearRect(0, 0, 128, 32);
+  g.font = 'bold 18px "PT Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(0,0,0,.55)'; const w = Math.min(124, g.measureText(nick).width + 14); g.fillRect(64 - w / 2, 4, w, 24);
+  g.fillStyle = '#' + COLORS[i].toString(16).padStart(6, '0'); g.fillText(nick, 64, 17, 116);
+  av.lt.needsUpdate = true;
+}
+
+/* ---------- звук (синтез, без файлов) ---------- */
+let AC = null, master, NB, droneG, emitters = [];
+const SND = {};
+function initAudio() {
+  if (AC) { AC.resume && AC.resume(); return; }
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; return; }
+  const comp = AC.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 6; comp.connect(AC.destination);
+  master = AC.createGain(); master.gain.value = .8; master.connect(comp);
+  NB = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+  const d = NB.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  droneG = gn(.045); const lp = filt('lowpass', 170, 1); lp.connect(droneG).connect(master);
+  [55, 55.35, 82.6].forEach(f => { const o = osc('sawtooth', f); o.connect(lp); o.start(); });
+  const wn = noise(), wl = filt('lowpass', 380, .7), wg = gn(.035); wn.connect(wl).connect(wg).connect(master); wn.start();
+  const lfo = osc('sine', .07), lg = gn(.025); lfo.connect(lg).connect(wg.gain); lfo.start();
+  emitter(10.2, .8, .6, o => { const s = osc('sine', 1000); const g = gn(.035); s.connect(g).connect(o); s.start(); }, () => W.tv === 1 && W.pw ? 1 : 0);
+  emitter(10.2, .8, .6, o => { const n = noise(), b = filt('bandpass', 2600, .4), g = gn(.3); n.connect(b).connect(g).connect(o); n.start(); }, () => W.tv === 2 && W.pw ? 1 : 0);
+  emitter(3.55, 1, .45, o => { const s = osc('sawtooth', 50), f = filt('lowpass', 130), g = gn(.35); s.connect(f).connect(g).connect(o); s.start(); }, () => W.pw ? 1 : 0);
+  emitter(8.25, 1.5, .1, o => { const n = noise(), f = filt('lowpass', 700), g = gn(.5); n.connect(f).connect(g).connect(o); n.start(); }, () => W.win ? 1.3 : 0);
+}
+const osc = (type, f) => { const o = AC.createOscillator(); o.type = type; o.frequency.value = f; return o; };
+const gn = v => { const g = AC.createGain(); g.gain.value = v; return g; };
+const filt = (type, f, q = 1) => { const b = AC.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+const noise = () => { const s = AC.createBufferSource(); s.buffer = NB; s.loop = true; return s; };
+function env(p, t, a, peak, d) { p.cancelScheduledValues(t); p.setValueAtTime(.0001, t); p.exponentialRampToValueAtTime(Math.max(.0002, peak), t + a); p.exponentialRampToValueAtTime(.0001, t + a + d); }
+function nburst(o, t, type, f, q, a, peak, d) { const n = noise(), b = filt(type, f, q), g = gn(0); env(g.gain, t, a, peak, d); n.connect(b).connect(g).connect(o); n.start(t, Math.random()); n.stop(t + a + d + .05); }
+const _v = new THREE.Vector3(), _f = new THREE.Vector3();
+function spatial(x, y, z) {
+  _v.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+  const d = _v.length();
+  return { pan: d > .01 ? clamp(_v.x / d, -1, 1) * .85 : 0, att: 1 / (1 + d * d * .05), d };
+}
+function out(vol, pos) {
+  const g = gn(vol);
+  if (pos) {
+    const s = spatial(pos[0], pos[1], pos[2]); g.gain.value = vol * s.att;
+    if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = s.pan; g.connect(p).connect(master); return g; }
+  }
+  g.connect(master); return g;
+}
+function play(fn, vol = 1, pos) { if (!AC) return; try { fn(out(vol, pos)); } catch (e) { } }
+function emitter(x, y, z, build, base) {
+  const g = gn(0); let p = null;
+  if (AC.createStereoPanner) { p = AC.createStereoPanner(); g.connect(p).connect(master); } else g.connect(master);
+  build(g); emitters.push({ x, y, z, g, p, base });
+}
+Object.assign(SND, {
+  knock(o) { const t = AC.currentTime; for (let i = 0; i < 3; i++) { const ti = t + i * .32 + Math.random() * .04, s = osc('sine', 150), g = gn(0); s.frequency.setValueAtTime(150, ti); s.frequency.exponentialRampToValueAtTime(48, ti + .14); env(g.gain, ti, .004, 1, .2); s.connect(g).connect(o); s.start(ti); s.stop(ti + .3); nburst(o, ti, 'lowpass', 1300, 1, .002, .7, .07); } },
+  ring(o) { const t = AC.currentTime, d = 1.4, g = gn(0), am = gn(.5), lfo = osc('square', 24), lg = gn(.5); lfo.connect(lg).connect(am.gain); const a = osc('triangle', 880), b = osc('triangle', 1100); a.connect(am); b.connect(am); am.connect(g).connect(o); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.35, t + .02); g.gain.setValueAtTime(.35, t + d); g.gain.exponentialRampToValueAtTime(.0001, t + d + .08); [lfo, a, b].forEach(x => { x.start(t); x.stop(t + d + .1); }); },
+  buzz(o) { const t = AC.currentTime, s = osc('square', 165), f = filt('lowpass', 450), g = gn(0); s.connect(f).connect(g).connect(o); [0, .38].forEach(k => { g.gain.setValueAtTime(0, t + k); g.gain.linearRampToValueAtTime(.4, t + k + .01); g.gain.setValueAtTime(.4, t + k + .24); g.gain.linearRampToValueAtTime(0, t + k + .27); }); s.start(t); s.stop(t + .7); },
+  step(o, v = .3) { nburst(o, AC.currentTime, 'bandpass', rand(220, 600), .9, .004, v, .12); },
+  breath(o, v = .3) { const t = AC.currentTime, n = noise(), b = filt('bandpass', rand(900, 1300), .7), g = gn(0); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .6); g.gain.linearRampToValueAtTime(.0001, t + 1.4); n.connect(b).connect(g).connect(o); n.start(t, Math.random()); n.stop(t + 1.5); },
+  sting(o) { const t = AC.currentTime, f = filt('lowpass', 300, 2), g = gn(0); f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(4000, t + .15); f.frequency.exponentialRampToValueAtTime(600, t + 2.5); env(g.gain, t, .02, .5, 2.6); f.connect(g).connect(o); [73.4, 77.8, 110, 155.6, 233, 311].forEach(fr => { const s = osc('sawtooth', fr); s.detune.value = rand(-20, 20); s.connect(f); s.start(t); s.stop(t + 3); }); nburst(o, t, 'highpass', 1800, 1, .005, .35, .9); },
+  screech(o) { const t = AC.currentTime, g = gn(0); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.85, t + .03); g.gain.setValueAtTime(.85, t + 1.1); g.gain.exponentialRampToValueAtTime(.0001, t + 1.6); g.connect(o); const vib = osc('sine', 28), vg = gn(140); vib.connect(vg); [1, 1.47, 2.03].forEach(m => { const s = osc('sawtooth', 420 * m); s.frequency.setValueAtTime(420 * m, t); s.frequency.exponentialRampToValueAtTime(1500 * m, t + 1.2); vg.connect(s.frequency); s.connect(g); s.start(t); s.stop(t + 1.7); }); vib.start(t); vib.stop(t + 1.7); const n = noise(), bp = filt('bandpass', 2200, .8); n.connect(bp).connect(g); n.start(t); n.stop(t + 1.7); },
+  heart(o, v = .5) { const t = AC.currentTime; [0, .24].forEach((k, i) => { const s = osc('sine', 62), g = gn(0); s.frequency.setValueAtTime(62, t + k); s.frequency.exponentialRampToValueAtTime(36, t + k + .16); env(g.gain, t + k, .008, v * (i ? .7 : 1), .18); s.connect(g).connect(o); s.start(t + k); s.stop(t + k + .3); }); },
+  click(o) { nburst(o, AC.currentTime, 'highpass', 2500, 1, .001, .5, .03); },
+  lock(o) { const t = AC.currentTime; nburst(o, t, 'highpass', 2000, 1, .001, .6, .03); nburst(o, t + .14, 'bandpass', 900, 2, .001, .8, .06); },
+  meow(o) { const t = AC.currentTime, s = osc('sawtooth', 520), b = filt('bandpass', 1300, 4), g = gn(0); s.frequency.setValueAtTime(520, t); s.frequency.linearRampToValueAtTime(820, t + .15); s.frequency.linearRampToValueAtTime(470, t + .6); env(g.gain, t, .05, .5, .6); s.connect(b).connect(g).connect(o); s.start(t); s.stop(t + .8); },
+  hiss(o) { nburst(o, AC.currentTime, 'highpass', 2800, 1, .08, .3, 1.0); },
+  creak(o) { const t = AC.currentTime, s = osc('sawtooth', 60), b = filt('bandpass', 650, 12), g = gn(0); s.frequency.setValueAtTime(60, t); s.frequency.linearRampToValueAtTime(95, t + .5); s.frequency.linearRampToValueAtTime(70, t + 1.0); s.frequency.linearRampToValueAtTime(115, t + 1.5); env(g.gain, t, .15, 1, 1.5); s.connect(b).connect(g).connect(o); s.start(t); s.stop(t + 1.8); },
+  powerDown(o) { const t = AC.currentTime, s = osc('sine', 160), g = gn(0); s.frequency.setValueAtTime(160, t); s.frequency.exponentialRampToValueAtTime(25, t + 1.2); env(g.gain, t, .01, .45, 1.3); s.connect(g).connect(o); s.start(t); s.stop(t + 1.5); nburst(o, t, 'lowpass', 400, 1, .002, .8, .2); },
+  powerUp(o) { const t = AC.currentTime, s = osc('sine', 100), g = gn(0); env(g.gain, t, .02, .15, 1.2); s.connect(g).connect(o); s.start(t); s.stop(t + 1.4); nburst(o, t, 'highpass', 2000, 1, .001, .6, .04); },
+  rattle(o) { let t = AC.currentTime; nburst(o, t, 'lowpass', 300, 1, .003, .7, .12); for (let i = 0; i < 9; i++) { t += rand(.05, .14); nburst(o, t, 'bandpass', rand(2000, 2800), 6, .001, .6, .05); } nburst(o, t + .1, 'lowpass', 300, 1, .003, .7, .12); },
+  roof(o) { const t = AC.currentTime; for (let i = 0; i < 5; i++) nburst(o, t + i * .58, 'lowpass', 220, 1, .005, .9, .22); },
+  whoosh(o) { const t = AC.currentTime, n = noise(), b = filt('bandpass', 250, .7), g = gn(0); b.frequency.setValueAtTime(250, t); b.frequency.exponentialRampToValueAtTime(1300, t + 1.7); b.frequency.exponentialRampToValueAtTime(250, t + 3.6); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.25, t + 1.7); g.gain.exponentialRampToValueAtTime(.0001, t + 3.6); n.connect(b).connect(g).connect(o); n.start(t); n.stop(t + 3.7); },
+  siren(o, dur = 12) { const t = AC.currentTime, s = osc('sawtooth', 700), f = filt('lowpass', 1800), g = gn(0); for (let k = 0, i = 0; k < dur; k += .9, i++) s.frequency.linearRampToValueAtTime(i % 2 ? 650 : 1150, t + k); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.22, t + dur * .7); g.gain.setValueAtTime(.22, t + dur); g.gain.exponentialRampToValueAtTime(.0001, t + dur + 1); s.connect(f).connect(g).connect(o); s.start(t); s.stop(t + dur + 1.1); },
+  beeps(o) { const t = AC.currentTime; for (let i = 0; i < 4; i++) { const s = osc('sine', 425), g = gn(0); g.gain.setValueAtTime(0, t + i * .7); g.gain.linearRampToValueAtTime(.15, t + i * .7 + .01); g.gain.setValueAtTime(.15, t + i * .7 + .35); g.gain.linearRampToValueAtTime(0, t + i * .7 + .36); s.connect(g).connect(o); s.start(t + i * .7); s.stop(t + i * .7 + .4); } },
+  dial(o) { const t = AC.currentTime; [0, .5, 1.0].forEach(k => nburst(o, t + k, 'bandpass', 1800, 4, .001, .4, .08)); },
+  gasp(o) { nburst(o, AC.currentTime, 'bandpass', 1000, 1, .03, .7, .5); }
+});
+
+/* ---------- мир: общее состояние ----------
+   W — состояние дома. Его меняет только «хозяин» комнаты (первый вошедший),
+   остальные получают копию через presence и просят действия через req. */
+const STEPS = ['lobby', 'tasks', 'ringWait', 'ring', 'call1', 'sms', 'kitchen', 'scare', 'knock', 'peep', 'dark', 'restored', 'window', 'call', 'calling', 'hide', 'closet', 'end'];
+const SI = s => STEPS.indexOf(s);
+const LIMIT = { call: 90, hide: 60 };
+const CP = [[4, 4.4, 8.0], [5.5, 5.2, 7.5], [9, 5.2, 7.5], [10, 6.3, 8.0], [11.5, 8.1, 8.1], [13, 9.7, 8.45], [16, 9.7, 8.45], [18, 10.85, 8.6], [25, 10.85, 8.6], [28.5, 8.1, 8.1], [30, 6, 8.0], [31.5, 4.4, 8.0]];
+const initialW = () => ({
+  started: false, step: 'lobby', st: 0, min: 23 * 60 + 12, n: 1,
+  food: false, fed: false, locked: false, tv: 1, kl: true, pw: true, ring: false, win: false, prints: false,
+  sms: true, saw: false, sawAt: 0, figHide: false, peeper: null, ans: null, caller: null, flashBy: null,
+  spots: { hall: null, bedL: null, bedR: null }, end: null, caught: null
+});
+let W = initialW();
+
+const NET = { mode: 'solo', rm: null, code: null, me: 'me', nick: 'Игрок', t0: Date.now(), isHost: true, joinedAt: 0 };
+let PL = [];             // игроки: [{peer, nick, t0, isMe, pres}]
+let lastHostW = null;
+const lastReq = {};
+const myPres = {};
+let reqN = 0, presT = 0;
+try { const n = localStorage.getItem('dom-nick'); if (n) $('nick').value = n; } catch (e) { }
+
+function players() {
+  if (NET.mode !== 'multi' || !NET.rm) return [{ peer: NET.me, nick: NET.nick, t0: NET.t0, isMe: true, pres: myPres }];
+  let list = [];
+  for (const p of NET.rm.peers()) {
+    const pr = p.presence || {};
+    if (pr.code !== NET.code || typeof pr.nick !== 'string') continue;
+    if (p.sameTab) NET.me = p.peer;
+    list.push({ peer: p.peer, nick: pr.nick.slice(0, 16) || 'Игрок', t0: +pr.t0 || 0, hub: !!pr.hub, isMe: !!p.sameTab, pres: p.sameTab ? myPres : pr });
+  }
+  if (!list.some(p => p.isMe)) list.push({ peer: NET.me, nick: NET.nick, t0: NET.t0, hub: !!myPres.hub, isMe: true, pres: myPres });
+  // узел PeerJS всегда ведёт игру; иначе — кто раньше вошёл
+  list.sort((a, b) => (b.hub - a.hub) || a.t0 - b.t0 || (a.peer < b.peer ? -1 : 1));
+  return list;
+}
+const nickOf = peer => { const p = PL.find(q => q.peer === peer); return p ? p.nick : 'кто-то'; };
+const whoIs = peer => peer === NET.me ? 'Ты' : nickOf(peer);
+const solo = () => PL.length <= 1;
+const myIndex = () => Math.max(0, PL.findIndex(p => p.isMe));
+
+function sendPresence() {
+  if (NET.mode !== 'multi' || !NET.rm) return;
+  presT = 0;
+  const patch = Object.assign({}, myPres, { w: NET.isHost ? W : null });
+  NET.rm.presence(patch).catch(() => { });
+}
+function req(a, s) {
+  if (NET.isHost) doAction(a, s, { peer: NET.me, nick: NET.nick });
+  else { myPres.req = (myPres.req || []).concat({ n: ++reqN, a, s: s || null }).slice(-4); sendPresence(); }
+}
+
+// --- только у хозяина ---
+function setStep(s) {
+  W.step = s; W.st = 0;
+  if (s === 'ring') W.ring = true;
+  if (s === 'kitchen') W.sms = W.kl;
+  if (s === 'scare') { W.saw = false; W.figHide = false; }
+  if (s === 'dark') W.pw = false;
+  if (s === 'window') W.win = true;
+}
+function endGame(kind) { W.end = kind; W.step = 'end'; W.st = 0; }
+function doAction(a, s, actor) {
+  switch (a) {
+    case 'food': if (!W.food && !W.fed) W.food = true; break;
+    case 'feed': if (W.food && !W.fed) { W.fed = true; W.food = false; } break;
+    case 'lock': W.locked = true; break;
+    case 'tvoff': if (W.tv && W.pw) W.tv = 0; break;
+    case 'kl': W.kl = !W.kl; if (W.step === 'kitchen') setStep('scare'); break;
+    case 'answer': if (W.ring) { W.ring = false; W.ans = actor.peer; setStep('call1'); } break;
+    case 'peep': if (W.step === 'knock') { W.peeper = actor.peer; setStep('peep'); } break;
+    case 'flash': if (W.step === 'dark' && !W.flashBy) W.flashBy = actor.peer; break;
+    case 'panel': if (W.step === 'dark' && W.flashBy) { W.pw = true; W.tv = 2; setStep('restored'); } break;
+    case 'closewin': if (W.step === 'window') { W.win = false; W.prints = true; setStep('call'); } break;
+    case 'call112': if (W.step === 'call') { W.caller = actor.peer; setStep('calling'); } break;
+    case 'hide':
+      if (W.step === 'hide' && SPOTS[s] && !W.spots[s] && !Object.values(W.spots).includes(actor.peer)) W.spots = Object.assign({}, W.spots, { [s]: actor.peer });
+      break;
+  }
+}
+let minAcc = 0;
+function hostTick(dt) {
+  for (const p of PL) {
+    if (p.isMe) continue;
+    const q = p.pres && p.pres.req;
+    if (!Array.isArray(q)) continue;
+    for (const r of q) if (r && typeof r.n === 'number' && r.n > (lastReq[p.peer] || 0)) { lastReq[p.peer] = r.n; doAction(String(r.a), r.s, p); }
+  }
+  if (!W.started || W.step === 'end') return;
+  W.st += dt;
+  minAcc += dt; if (minAcc > 5) { minAcc -= 5; W.min++; }
+  const st = W.st;
+  switch (W.step) {
+    case 'tasks': if (W.fed && W.locked && !W.tv) setStep('ringWait'); break;
+    case 'ringWait': if (st > 6) setStep('ring'); break;
+    case 'call1': if (st > 13.5) setStep('sms'); break;
+    case 'sms': if (st > 2.2) setStep('kitchen'); break;
+    case 'scare':
+      if (!W.saw && PL.some(p => p.pres && p.pres.saw)) { W.saw = true; W.sawAt = st; }
+      if (W.saw) { if (st > W.sawAt + 1) W.figHide = true; if (st > W.sawAt + 5.5) setStep('knock'); }
+      else { if (st > 12) W.figHide = true; if (st > 15) setStep('knock'); }
+      break;
+    case 'peep': if (st > 3.4) setStep('dark'); break;
+    case 'restored': if (st > 8) setStep('window'); break;
+    case 'call': if (st > LIMIT.call) endGame('call'); break;
+    case 'calling': if (st > 16.5) setStep('hide'); break;
+    case 'hide': {
+      const hidden = Object.values(W.spots);
+      if (PL.slice(0, 3).every(p => hidden.includes(p.peer))) setStep('closet');
+      else if (st > LIMIT.hide) endGame('hide');
+      break;
+    }
+    case 'closet': {
+      const c = PL.slice(0, 3).find(p => p.pres && p.pres.caught);
+      if (c) { W.caught = c.peer; endGame('closet'); }
+      else if (st > 36) endGame('good');
+      break;
+    }
+  }
+}
+
+/* ---------- сеть: комната на троих ---------- */
+let NETKIND = null;
+(async () => {
+  try { NETKIND = window.DomNet ? await DomNet.detect() : null; } catch (e) { NETKIND = null; }
+  if (NETKIND) {
+    $('createBtn').disabled = false; $('joinBtn').disabled = false;
+    $('netNote').textContent = 'Чтобы играть вместе, нажми «Позвать друзей» и скажи им код. Друг вводит код и входит.';
+  } else $('netNote').textContent = 'Совместная игра в этом окне недоступна. Одному можно играть где угодно.';
+})();
+function netLost(e) {
+  const text = DomNet.errorText(e);
+  if (!L.started) { $('lobbyNote').textContent = text; return; }
+  if (L.over) return;
+  L.over = true; try { document.exitPointerLock && document.exitPointerLock(); } catch (er) { }
+  $('hud').hidden = true; $('touch').hidden = true; $('slats').hidden = true; $('peep').hidden = true;
+  $('endNum').textContent = 'Связь'; $('endTitle').textContent = 'Игра прервалась'; $('endText').textContent = text;
+  $('end').hidden = false;
+}
+function pickNick() {
+  const v = $('nick').value.trim().slice(0, 16) || 'Игрок';
+  NET.nick = v; myPres.nick = v; myPres.t0 = NET.t0;
+  try { localStorage.setItem('dom-nick', v); } catch (e) { }
+}
+async function joinRoom(code, create) {
+  $('createBtn').disabled = $('joinBtn').disabled = true;
+  $('netNote').textContent = create ? 'Создаю комнату…' : 'Подключаюсь к комнате…';
+  try { NET.rm = await DomNet.open(code, create); }
+  catch (e) {
+    $('createBtn').disabled = $('joinBtn').disabled = false;
+    if (create && e === 'unavailable-id') return joinRoom(newCode(), true);
+    $('netNote').textContent = DomNet.errorText(e); return;
+  }
+  NET.mode = 'multi'; NET.code = code; NET.joinedAt = performance.now();
+  myPres.code = code; if (NET.rm.isHub) myPres.hub = true;
+  NET.rm.onError(netLost);
+  sendPresence();
+  $('title').hidden = true; $('lobby').hidden = false; $('lobbyCode').textContent = code.toUpperCase();
+}
+const CODE_CH = 'abcdefghjkmnpqrstuvwxyz23456789';
+const newCode = () => { let c = ''; for (let i = 0; i < 4; i++) c += CODE_CH[Math.random() * CODE_CH.length | 0]; return c; };
+$('createBtn').addEventListener('click', () => {
+  if (!NETKIND) return; pickNick(); initAudio(); joinRoom(newCode(), true);
+});
+$('joinBtn').addEventListener('click', () => {
+  const c = $('codeIn').value.trim().toLowerCase();
+  if (!/^[a-z0-9]{4}$/.test(c)) { $('netNote').textContent = 'Код из четырёх букв или цифр, его показывает тот, кто позвал.'; return; }
+  if (!NETKIND) return; pickNick(); initAudio(); joinRoom(c, false);
+});
+$('codeIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('joinBtn').click(); });
+$('soloBtn').addEventListener('click', () => {
+  pickNick(); initAudio(); NET.mode = 'solo'; PL = players();
+  W.started = true; W.n = 1; setStep('tasks');
+});
+$('goBtn').addEventListener('click', () => {
+  if (!NET.isHost || W.started) return;
+  W.started = true; W.n = PL.length; setStep('tasks'); sendPresence();
+});
+$('copyBtn').addEventListener('click', () => {
+  const code = $('lobbyCode').textContent;
+  const done = () => { $('copyBtn').textContent = 'Скопировано'; setTimeout(() => $('copyBtn').textContent = 'Скопировать код', 1500); };
+  try { navigator.clipboard.writeText(code).then(done, () => selectCode()); } catch (e) { selectCode(); }
+});
+function selectCode() { const r = document.createRange(); r.selectNodeContents($('lobbyCode')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+let lobbyHTML = '';
+function renderLobby() {
+  const rows = PL.slice(0, 3).map((p, i) => `<li><i style="background:${CSSCOL[i]}"></i>${esc(p.nick)}${p.isMe ? ' <em>это ты</em>' : ''}${i === 0 ? ' <em>начинает игру</em>' : ''}</li>`);
+  for (let i = rows.length; i < 3; i++) rows.push('<li class="empty"><i style="border:1px dashed var(--line)"></i>ждём игрока…</li>');
+  const h = rows.join('');
+  if (h !== lobbyHTML) { $('lobbyList').innerHTML = h; lobbyHTML = h; }
+  $('goBtn').hidden = !NET.isHost;
+  if (myIndex() >= 3 && performance.now() - NET.joinedAt > 1500) {
+    $('lobbyNote').textContent = 'В этой комнате уже трое. Попроси код другой комнаты или создай свою.';
+    $('goBtn').hidden = true;
+  } else if (!NET.isHost) $('lobbyNote').textContent = `Ждём, пока ${PL[0] ? PL[0].nick : 'хозяин'} начнёт игру.`;
+  else $('lobbyNote').textContent = PL.length < 2 ? 'Можно начать и вдвоём, и втроём. Друзья могут зайти и после начала.' : '';
+}
+
+function netFrame(dt) {
+  PL = players();
+  const host = PL[0];
+  const wasHost = NET.isHost;
+  NET.isHost = !host || host.isMe;
+  if (NET.mode === 'multi') {
+    if (NET.isHost && !wasHost) { // хозяин ушёл — продолжаем с последнего состояния
+      W = JSON.parse(JSON.stringify(W));
+      for (const p of PL) if (p.pres && Array.isArray(p.pres.req) && p.pres.req.length) lastReq[p.peer] = p.pres.req[p.pres.req.length - 1].n;
+    }
+    if (!NET.isHost && host.pres && host.pres.w && host.pres.w !== lastHostW) { lastHostW = host.pres.w; W = host.pres.w; }
+  }
+  if (NET.isHost) hostTick(dt);
+  presT += dt; if (presT >= .066) sendPresence();
+  if (!L.started && NET.mode === 'multi' && !$('lobby').hidden) renderLobby();
+}
+
+/* ---------- локальное состояние этого игрока ---------- */
+const L = { started: false, over: false, flashOn: false, sawLocal: false, flick: 0, ended: false };
+let mode = 'lobby';   // lobby | walk | peep | closet | dying | dead
+let paused = false;
+const P = { x: 9.3, z: 7.3 };
+const SPAWN = [[9.3, 7.3, Math.PI / 2 + .25], [9.2, 8.6, Math.PI / 2], [9.7, 8.95, Math.PI / 2 + .4]];
+let yaw = Math.PI / 2 + .25, pitch = -.05, bob = 0, stepT = 0, shake = 0, flickOff = false, mySpot = null, spotBase = 0;
+const clockStr = () => { const h = Math.floor(W.min / 60) % 24, m = W.min % 60; return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); };
+const timers = [];
+function later(s, fn) { timers.push({ t: s, fn }); }
+
+/* ---------- HUD ---------- */
+let objHTML = '', teamHTML = '';
+function objectives() {
+  const s = W.step, k = W.sms ? 'Выключить свет на кухне' : 'Включить свет на кухне';
+  switch (s) {
+    case 'tasks': case 'ringWait': return [['Насыпать корм Барсику', W.fed], ['Запереть входную дверь', W.locked], ['Выключить телевизор в зале', !W.tv]];
+    case 'ring': return [['Ответить на звонок (телефон в прихожей)', false]];
+    case 'kitchen': return [[k, false]];
+    case 'scare': return [[k, true]];
+    case 'knock': return [['Посмотреть в глазок', false]];
+    case 'peep': return [['Посмотреть в глазок', true]];
+    case 'dark': case 'restored': return [['Взять фонарик (ящик на кухне)', !!W.flashBy], ['Включить автоматы в щитке (прихожая)', s === 'restored']];
+    case 'window': return [['Проверить, откуда сквозняк', false]];
+    case 'call': return [['Позвонить в 112 (телефон в прихожей)', false]];
+    case 'calling': return [['Позвонить в 112 (телефон в прихожей)', true]];
+    case 'hide': {
+      if (solo()) return [['Спрятаться в шкаф: в спальне или в прихожей', false]];
+      const n = Object.values(W.spots).filter(Boolean).length;
+      return [[`Всем спрятаться по шкафам (${n} из ${PL.length})`, false]];
+    }
+    case 'closet': return [['Сидеть тихо, пока не приедет полиция', false]];
+  }
+  return [];
+}
+function drawHUD() {
+  const list = objectives();
+  const h = list.map(([t, d]) => `<li class="${d ? 'done' : ''}">${t}</li>`).join('');
+  if (h !== objHTML) { $('objList').innerHTML = h; objHTML = h; $('obj').hidden = !list.length; }
+  $('clockT').textContent = clockStr();
+  if (NET.mode === 'multi') {
+    const th = PL.slice(0, 3).map((p, i) => {
+      const hid = Object.values(W.spots).includes(p.peer), fl = W.flashBy === p.peer;
+      return `<li>${esc(p.nick)}${p.isMe ? ' <em>(ты)</em>' : ''}${hid ? ' <em>в шкафу</em>' : ''}${fl ? ' <em>фонарик</em>' : ''}<i style="background:${CSSCOL[i]}"></i></li>`;
+    }).join('');
+    if (th !== teamHTML) { $('teamList').innerHTML = th; teamHTML = th; $('teamCode').textContent = 'Комната ' + NET.code.toUpperCase(); }
+    $('team').hidden = false;
+  }
+}
+const subQ = []; let subCur = null;
+function say(who, text, dur, fn) { subQ.push({ who, text, dur: dur != null ? dur : Math.max(2.4, text.length * .07), fn }); }
+function drawSub(s) {
+  const el = $('subs');
+  if (!s || !s.text) { el.innerHTML = ''; return; }
+  el.innerHTML = s.who ? `<span class="who ${s.who === 'Голос' ? 'voice' : ''}">${esc(s.who)}:</span>${esc(s.text)}` : `<span class="thought">${esc(s.text)}</span>`;
+}
+let phoneTimer = null;
+function phoneMsg(from, text) {
+  $('phFrom').textContent = from; $('phText').textContent = text; $('phTime').textContent = clockStr();
+  $('phone').classList.add('show'); play(SND.buzz, .8);
+  clearTimeout(phoneTimer); phoneTimer = setTimeout(() => $('phone').classList.remove('show'), 9000);
+}
+function hint(t) { $('hint').textContent = t || ''; }
+
+/* ---------- начало игры у этого игрока ---------- */
+function begin() {
+  L.started = true; mode = 'walk';
+  $('title').hidden = true; $('lobby').hidden = true; $('hud').hidden = false; if (TOUCH) $('touch').hidden = false;
+  const sp = SPAWN[Math.min(2, myIndex())]; P.x = sp[0]; P.z = sp[1]; yaw = sp[2];
+  hint(TOUCH ? 'Левая половина экрана — идти, правая — смотреть' : 'WASD — идти · мышь — смотреть (кликни по экрану) · E — действие');
+  later(14, () => { if (W.flashBy !== NET.me) hint(''); });
+  if (!TOUCH) tryLock();
+}
+
+/* ---------- сюжет: что видит и слышит каждый ---------- */
+function onStep(s) {
+  if (s !== 'scare') { myPres.saw = false; L.sawLocal = false; }
+  switch (s) {
+    case 'tasks':
+      say(null, solo() ? 'Родители уехали на дачу. До завтра дом весь мой.' : 'Родители уехали на дачу. До завтра дом наш.', 3.2);
+      later(3.6, () => phoneMsg('Мама', 'Доехали. Покорми Барсика и запри дверь на ночь, хорошо? Телевизор не забудь выключить.'));
+      break;
+    case 'ringWait': later(2.5, () => say(null, 'Всё сделано. Можно спать.')); break;
+    case 'ring': say(null, 'Домашний телефон? Кто звонит в такое время?'); ringT = 0; break;
+    case 'call1': {
+      const a = whoIs(W.ans);
+      play(SND.click, .6, [4.32, .9, 9.3]);
+      say(a, 'Алло?', 1.8);
+      say(null, 'Тишина. Кто-то дышит в трубку.', 3.6, () => { for (let i = 0; i < 3; i++) later(i * 1.3, () => play(o => SND.breath(o, .35))); });
+      say(a, 'Алло! Кто это?', 2);
+      say('Голос', solo() ? 'Ты сейчас один?' : 'Вас там трое, да?', 2.8, () => play(o => SND.breath(o, .25)));
+      say(null, 'Короткие гудки.', 2.4, () => play(SND.beeps));
+      break;
+    }
+    case 'kitchen':
+      phoneMsg('Номер скрыт', W.sms ? 'выключи свет на кухне. мне плохо видно' : 'включи свет на кухне. я вас не вижу');
+      later(2, () => say(null, 'Откуда он знает про кухню?'));
+      break;
+    case 'knock': say(null, 'Стучат во входную дверь.'); knockT = 0; break;
+    case 'peep':
+      if (W.peeper === NET.me) enterPeep();
+      else say(null, `${nickOf(W.peeper)} смотрит в глазок.`, 2.4);
+      break;
+    case 'dark':
+      if (mode === 'peep') exitPeep();
+      play(SND.powerDown, 1);
+      say(null, 'Свет вырубило. Во всём доме.', 2.6);
+      say(null, 'Фонарик лежал в ящике на кухне.', 2.8);
+      darkT = 6; rattled = false;
+      break;
+    case 'restored':
+      play(SND.powerUp, 1); say(null, 'Есть свет.', 2);
+      later(2.4, () => say(null, 'Телевизор опять шипит. Его же выключали.'));
+      break;
+    case 'window': play(SND.creak, 1.6, [8.25, 1.5, .1]); say(null, 'В зале что-то стукнуло. Тянет холодом.'); break;
+    case 'call':
+      play(SND.creak, 1.2, [8.25, 1.5, .1]);
+      say(null, 'Окно открыли снаружи.', 2.4);
+      say(null, 'На полу мокрые следы. От окна к ванной.', 3.2);
+      say(null, 'Надо звонить в полицию.', 2.4);
+      creepT = 6;
+      break;
+    case 'calling': {
+      const c = whoIs(W.caller);
+      play(SND.dial, .7, [4.32, .9, 9.3]);
+      say(null, `${c === 'Ты' ? 'Набираешь' : c + ' набирает'} один-один-два.`, 2);
+      say('Оператор', 'Служба 112. Что у вас случилось?', 2.8);
+      say(c, solo() ? 'Ко мне в дом кто-то залез. Я один. Трактовая, четырнадцать.' : 'К нам в дом кто-то залез. Нас трое. Трактовая, четырнадцать.', 3.6);
+      say('Оператор', 'Наряд выезжает. Спрячьтесь и не шумите. Не выходите, пока не приедут.', 4.4);
+      say('Оператор', 'Не кладите труб…', 1.4, () => play(SND.beeps));
+      say(null, 'Связь оборвалась.', 2.2);
+      break;
+    }
+    case 'hide':
+      hint(solo() ? 'Шкаф в спальне или шкаф в прихожей' : 'Шкаф в прихожей и шкаф в спальне на две створки. Каждому своё место');
+      break;
+    case 'end': handleEnd(); break;
+  }
+}
+const prev = {};
+function watch() {
+  if (!L.started && W.started && W.step !== 'lobby' && myIndex() < 3) begin();
+  if (!L.started) return;
+  if (W.step !== prev.step) { prev.step = W.step; onStep(W.step); }
+  const flag = (k, fn) => { const v = W[k]; if (!(k in prev)) { prev[k] = v; return; } if (v !== prev[k]) { const o = prev[k]; prev[k] = v; fn(v, o); } };
+  flag('food', v => { if (v) { play(SND.click, .6, [.55, 1, .4]); say(null, 'Пачка корма почти пустая.', 2.2); } });
+  flag('fed', v => { if (v) later(.4, () => play(SND.meow, .7, [3.4, .3, 5.3])); });
+  flag('locked', v => { if (v) play(SND.lock, .8, [6.3, 1, 9.9]); });
+  flag('tv', v => { if (!v) play(SND.click, .7, [10.2, .8, .6]); });
+  flag('kl', () => play(SND.click, .7, [3.9, 1.2, 3.7]));
+  flag('flashBy', v => {
+    if (!v) return; play(SND.click, .7);
+    if (v === NET.me) { L.flashOn = true; hint(TOUCH ? 'Кнопка «Фонарь» — включить и выключить' : 'F — фонарик'); say(null, 'Фонарик у тебя. Теперь к щитку в прихожей.'); }
+    else say(null, `Фонарик нашёл(ла) ${nickOf(v)}. Держитесь рядом.`, 2.6);
+  });
+  const mine = Object.keys(W.spots).find(k => W.spots[k] === NET.me);
+  if (mine && mode === 'walk') enterCloset(mine);
+}
+
+/* ---------- глазок ---------- */
+let peepT = 0, peepStung = false;
+function enterPeep() { mode = 'peep'; peepT = 0; peepStung = false; prevPeepSt = 0; $('peep').hidden = false; }
+function exitPeep() { $('peep').hidden = true; mode = 'walk'; }
+
+/* ---------- шкаф ---------- */
+let cNoise = 0, breath = 100, breathLock = 0, cStep = 0, cBreathT = 0, sirenOn = false, holdTouch = false;
+function enterCloset(spot) {
+  mode = 'closet'; mySpot = spot; cNoise = 0; breath = 100; sirenOn = false;
+  const sp = SPOTS[spot]; sp.door.visible = false; $('slats').hidden = false; $('breath').hidden = false;
+  camera.position.set(sp.x, 1.55, sp.z); spotBase = sp.yaw; yaw = sp.yaw; pitch = -.05; L.flashOn = false;
+  myPres.hid = spot;
+  say(null, 'Тихо. Дыши ровнее.', 2.4);
+  hint(TOUCH ? 'Держи кнопку «Не дышать», когда он рядом' : 'Держи Пробел, чтобы затаить дыхание');
+}
+function figAt(cT) {
+  let i = 0; while (i < CP.length - 2 && cT > CP[i + 1][0]) i++;
+  const a = CP[i], b = CP[i + 1], k = clamp((cT - a[0]) / (b[0] - a[0]), 0, 1);
+  return { x: a[1] + (b[1] - a[1]) * k, z: a[2] + (b[2] - a[2]) * k, moving: a[1] !== b[1] || a[2] !== b[2], dx: b[1] - a[1], dz: b[2] - a[2] };
+}
+function closetUpdate(dt) {
+  const cT = W.step === 'closet' ? W.st : -1;
+  const sp = SPOTS[mySpot];
+  const hold = (keys.Space || holdTouch) && breathLock <= 0 && breath > 0;
+  const near = cT > sp.listen[0] - 4 && cT < sp.listen[1] + 2;
+  if (hold) { breath -= 9 * dt; if (breath <= 0) { breath = 0; breathLock = 1.6; play(SND.gasp, 1); if (near) cNoise += 1.6; } }
+  else { breath = Math.min(100, breath + 17 * dt); breathLock -= dt; cBreathT -= dt; if (cBreathT <= 0) { cBreathT = 2.2; play(o => SND.breath(o, .18)); } }
+  $('breathFill').style.width = breath + '%';
+  const listen = cT > sp.listen[0] && cT < sp.listen[1], warn = cT > sp.listen[0] - 1 && cT < sp.listen[1];
+  $('breath').classList.toggle('warn', warn);
+  if (cT < 0) {
+    const n = Object.values(W.spots).filter(Boolean).length;
+    $('breathTxt').textContent = `Ждём остальных: спрятались ${n} из ${PL.length}`;
+  } else $('breathTxt').textContent = warn ? 'Не дыши' : (TOUCH ? 'Держи «Не дыши» когда он рядом' : 'Пробел — затаить дыхание');
+  if (listen && !hold) cNoise += dt;
+  if (cNoise >= 1.3 && !myPres.caught) { myPres.caught = true; sendPresence(); }
+  if (cT > 21.5 && !sirenOn) { sirenOn = true; play(o => SND.siren(o, 12), 1); }
+}
+function closetFig(cT) {
+  if (cT < CP[0][0] || cT > CP[CP.length - 1][0]) { fig.visible = false; return; }
+  const f = figAt(cT);
+  let ry;
+  if (f.moving) ry = Math.atan2(f.dx, f.dz);
+  else if (cT > 18 && cT < 25) ry = Math.sin(cT * .7) * .25;
+  else if (cT > 5.5 && cT < 9) ry = -Math.PI / 2 + Math.sin(cT * .9) * .3;
+  else ry = Math.PI / 2 + Math.sin(cT * 1.1) * 1.3;
+  placeFig(f.x, 0, f.z, ry);
+  if (f.moving) { cStep -= 1 / 60; if (cStep <= 0) { cStep = .62; play(o => SND.step(o, .9), 1, [f.x, .1, f.z]); } }
+}
+
+/* ---------- концовки ---------- */
+const ENDS = {
+  good: { n: 1, t: () => solo() ? 'Дождался' : 'Дождались', x: () => `Наряд приехал в ${clockStr()}. Окно в зале открыли снаружи отвёрткой. Следы вели из ванной через огород к трассе. Его так и не нашли. Родители вернулись утром, а Барсик два дня не вылезал из-под кровати.` },
+  call: { n: 2, t: () => 'Не успели', x: () => solo() ? 'Ты слишком долго ходил по дому, где на полу мокрые следы. Он вышел из ванной раньше, чем ты дошёл до телефона.' : 'Вы слишком долго ходили по дому, где на полу мокрые следы. Он вышел из ванной раньше, чем кто-то дошёл до телефона.' },
+  hide: { n: 3, t: () => 'На виду', x: () => solo() ? 'Оператор сказал спрятаться. Ты остался стоять посреди дома.' : 'Оператор сказал спрятаться. Кто-то из вас остался стоять посреди дома.' },
+  closet: { n: 4, t: () => 'Услышал', x: () => W.caught === NET.me ? 'Ты выдохнул слишком громко. Дверца шкафа открылась.' : `Он услышал, как дышит ${nickOf(W.caught)}. Дверцы шкафов открывались одна за другой.` }
+};
+function handleEnd() {
+  if (L.ended) return; L.ended = true;
+  $('slats').hidden = true; $('breath').hidden = true; $('peep').hidden = true;
+  if (W.end === 'good') { mode = 'dead'; showEnd(); return; }
+  mode = 'dying'; L.flick = 1.4; play(o => SND.heart(o, .9), 1);
+  if (W.end === 'closet' && W.caught === NET.me && mySpot) { const sp = SPOTS[mySpot]; placeFig(sp.x, 0, sp.z - .62, 0); yaw = 0; pitch = .12; play(SND.sting, 1); }
+  later(1.4, jumpscare);
+}
+function jumpscare() {
+  mode = 'dead'; $('hud').hidden = true; $('touch').hidden = true;
+  const c = $('scare'); c.hidden = false; play(SND.screech, 1); const t0 = performance.now();
+  const frame = now => { const t = (now - t0) / 1000; drawScare(t); if (t < 1.5) requestAnimationFrame(frame); else { c.hidden = true; showEnd(); } };
+  requestAnimationFrame(frame);
+}
+function drawScare(t) {
+  const c = $('scare'), g = c.getContext('2d'), w = c.width, h = c.height;
+  g.fillStyle = Math.random() < .25 ? '#2a0000' : '#000'; g.fillRect(0, 0, w, h);
+  const s = 1 + Math.min(t, .5) * 1.2, j = REDUCE ? 1 : 7;
+  g.save(); g.translate(w / 2 + (Math.random() - .5) * j, h / 2 + 12 + (Math.random() - .5) * j); g.scale(s, s);
+  g.fillStyle = '#cdc6b5'; g.beginPath(); g.ellipse(0, 0, 33, 45, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(40,30,25,.4)'; g.beginPath(); g.ellipse(-20, 4, 12, 40, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#000'; g.beginPath(); g.ellipse(-12, -11, 8, 11, 0, 0, Math.PI * 2); g.ellipse(12, -9, 8, 12, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff'; g.fillRect(-12, -10, 1.5, 1.5); g.fillRect(12, -8, 1.5, 1.5);
+  g.fillStyle = '#050000'; g.beginPath(); g.ellipse(0, 24, 11, 15 + Math.random() * 3, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#8f8a7c'; for (let i = -8; i <= 8; i += 3) { g.fillRect(i, 10, 2, 4); g.fillRect(i, 35, 2, 3); }
+  g.restore();
+  for (let i = 0; i < 500; i++) { g.fillStyle = `rgba(255,255,255,${Math.random() * .25})`; g.fillRect(Math.random() * w | 0, Math.random() * h | 0, 1, 1); }
+}
+function showEnd() {
+  L.over = true; try { document.exitPointerLock && document.exitPointerLock(); } catch (e) { }
+  $('hud').hidden = true; $('touch').hidden = true; $('slats').hidden = true;
+  const e = ENDS[W.end] || ENDS.good;
+  $('endNum').textContent = `Концовка ${e.n} из 4`; $('endTitle').textContent = e.t(); $('endText').textContent = e.x();
+  $('end').hidden = false;
+}
+$('againBtn').addEventListener('click', () => location.reload());
+
+/* ---------- мелочи ---------- */
+function petCat() { play(SND.meow, .6, [cat.position.x, .3, cat.position.z]); say(null, W.step === 'dark' ? 'Барсик весь дрожит и смотрит на дверь.' : 'Барсик мурчит.', 2.2); }
+function toggleFlash() { if (W.flashBy !== NET.me || mode === 'peep' || mode === 'dead') return; L.flashOn = !L.flashOn; play(SND.click, .5); }
+function applyLights() {
+  for (const k in RL) {
+    const R = RL[k], on = W.pw && !flickOff && (k !== 'kitchen' || W.kl);
+    R.l.intensity = on ? R.base : 0; R.bulb.material.color.setHex(on ? 0xffe9b8 : 0x1a1a1a);
+  }
+  const p = W.pw && !flickOff; porch.intensity = p ? .9 : 0; porchBulb.material.color.setHex(p ? 0xffe2b0 : 0x1a1a1a);
+}
+
+/* ---------- ввод ---------- */
+const keys = {};
+addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  keys[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (e.repeat || !L.started || paused) return;
+  if (e.code === 'KeyE') act();
+  if (e.code === 'KeyF') toggleFlash();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+let dragging = false, everLocked = false;
+function tryLock() { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => { }); } catch (e) { } }
+canvas.addEventListener('mousedown', () => { if (!L.started || L.over) return; tryLock(); dragging = true; });
+addEventListener('mouseup', () => { dragging = false; });
+addEventListener('mousemove', e => { if (document.pointerLockElement === canvas || dragging) look(e.movementX, e.movementY); });
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === canvas) { everLocked = true; setPaused(false); }
+  else if (everLocked && L.started && !L.over && mode !== 'dead') setPaused(true);
+});
+$('pause').addEventListener('click', () => { setPaused(false); tryLock(); });
+function setPaused(v) {
+  paused = v; $('pause').hidden = !v; for (const k in keys) keys[k] = false;
+  $('pauseText').textContent = NET.mode === 'multi' ? 'Игра у друзей идёт дальше. Кликни, чтобы вернуться в дом.' : 'Кликни, чтобы вернуться в дом.';
+  if (AC && NET.mode !== 'multi') { if (v) AC.suspend && AC.suspend(); else AC.resume && AC.resume(); }
+}
+function look(dx, dy) {
+  if (!L.started || L.over || paused || mode === 'peep' || mode === 'dead' || mode === 'dying') return;
+  yaw -= dx * .0022; pitch = clamp(pitch - dy * .0022, -1.35, 1.35);
+  if (mode === 'closet') { yaw = clamp(yaw, spotBase - .9, spotBase + .9); pitch = clamp(pitch, -.45, .35); }
+}
+function act() { if (mode === 'walk' && focus && focus.action) focus.action(); }
+const joy = { x: 0, y: 0 }; let joyId = null, joyO = { x: 0, y: 0 }, lookId = null, lookL = { x: 0, y: 0 };
+const tz = $('touch');
+tz.addEventListener('touchstart', e => {
+  for (const t of e.changedTouches) {
+    if (t.clientX < innerWidth * .45 && joyId === null) { joyId = t.identifier; joyO = { x: t.clientX, y: t.clientY }; const k = $('knob'); k.hidden = false; k.style.left = t.clientX + 'px'; k.style.top = t.clientY + 'px'; $('knobI').style.transform = ''; }
+    else if (lookId === null) { lookId = t.identifier; lookL = { x: t.clientX, y: t.clientY }; }
+  }
+  e.preventDefault();
+}, { passive: false });
+tz.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joyId) {
+      const dx = clamp(t.clientX - joyO.x, -45, 45), dy = clamp(t.clientY - joyO.y, -45, 45);
+      joy.x = dx / 45; joy.y = -dy / 45; $('knobI').style.transform = `translate(${dx}px,${dy}px)`;
+    } else if (t.identifier === lookId) { look((t.clientX - lookL.x) * 1.7, (t.clientY - lookL.y) * 1.7); lookL = { x: t.clientX, y: t.clientY }; }
+  }
+  e.preventDefault();
+}, { passive: false });
+const tEnd = e => { for (const t of e.changedTouches) { if (t.identifier === joyId) { joyId = null; joy.x = joy.y = 0; $('knob').hidden = true; } if (t.identifier === lookId) lookId = null; } };
+tz.addEventListener('touchend', tEnd); tz.addEventListener('touchcancel', tEnd);
+const tb = (id, down, up) => { const b = $(id); b.addEventListener('touchstart', e => { e.stopPropagation(); e.preventDefault(); down(); }, { passive: false }); b.addEventListener('touchend', e => { e.stopPropagation(); e.preventDefault(); up && up(); }, { passive: false }); };
+tb('tAct', () => act()); tb('tFlash', () => toggleFlash()); tb('tBreath', () => { holdTouch = true; }, () => { holdTouch = false; });
+
+/* ---------- столкновения и взгляд ---------- */
+function blocked(x, z) {
+  const r = .24;
+  for (const c of colliders) if (x + r > c.x1 && x - r < c.x2 && z + r > c.z1 && z - r < c.z2) return true;
+  return false;
+}
+const ray = new THREE.Raycaster(); ray.far = 2.6; const center = new THREE.Vector2(0, 0);
+let focus = null;
+function visibleChain(o) { while (o) { if (!o.visible) return false; o = o.parent; } return true; }
+function updateFocus() {
+  focus = null;
+  if (mode === 'walk') {
+    ray.setFromCamera(center, camera);
+    const hits = ray.intersectObjects(scene.children, true);
+    for (const h of hits) {
+      if (!visibleChain(h.object) || h.object === ground || h.object.isSprite) continue;
+      let o = h.object; while (o && !o.userData.it) o = o.parent;
+      if (o) { const lab = o.userData.it.label(); if (lab) focus = lab; }
+      break;
+    }
+  }
+  const p = $('prompt');
+  if (focus) { p.innerHTML = focus.action ? `<b>E</b>${esc(focus.text)}` : esc(focus.text); p.className = focus.action ? '' : 'muted'; }
+  else p.innerHTML = '';
+  $('cross').className = focus && focus.action ? 'on' : '';
+  $('cross').hidden = mode !== 'walk';
+}
+function lookingAt(x, y, z) {
+  camera.getWorldDirection(_f); _v.set(x, y, z).sub(camera.position);
+  const d = _v.length(); _v.normalize(); return { dot: _f.dot(_v), d };
+}
+
+/* ---------- мир на экране ---------- */
+let ringT = 0, knockT = 0, darkT = 0, creepT = 0, rattled = false, tension = 0, hbT = 0, staticFrame = 0, focusT = 0, prevPeepSt = 0;
+function applyWorld(dt) {
+  if (L.flick > 0) { L.flick -= dt; flickOff = Math.random() < .55; if (L.flick <= 0) flickOff = false; }
+  applyLights();
+  neighborWin.visible = SI(W.step) < SI('dark');
+  const tvOn = W.tv && W.pw;
+  tvScreen.material = !tvOn ? tvMats.off : W.tv === 1 ? tvMats.test : tvMats.stat;
+  tvLight.intensity = tvOn ? (W.tv === 1 ? .45 : rand(.3, .7)) : 0;
+  if (tvOn && W.tv === 2 && (staticFrame++ & 1)) updStatic();
+  food.visible = !W.food && !W.fed; bowlFood.visible = W.fed;
+  prints.visible = W.prints;
+  cat.visible = !W.prints;
+  if (W.fed) { cat.position.set(3.4, 0, 5.25); cat.rotation.y = 0; } else { cat.position.set(9.7, .45, 4.95); cat.rotation.y = Math.PI; }
+  const s = WIN.living.sash, target = W.win ? -1.15 : 0;
+  s.rotation.y += (target - s.rotation.y) * Math.min(1, dt * 4);
+  WIN.curtains.forEach((c, i) => { const a = W.win ? .35 : .03; c.rotation.x = Math.sin(performance.now() / 380 + i * 1.7) * a; c.position.z = .13 + (W.win ? .12 + Math.sin(performance.now() / 500 + i) * .08 : 0); });
+  for (const k in SPOTS) if (k !== mySpot) SPOTS[k].door.visible = true;
+  const cT = W.step === 'closet' ? W.st : -1;
+  bathDoor.visible = !(cT > 3.5 && cT < 32);
+  police.intensity = cT > 27 ? 1.6 : 0; if (cT > 27) police.color.setHex(Math.floor(cT * 4) % 2 ? 0xff1a1a : 0x1a3cff);
+  // фигура
+  fig.visible = false;
+  if (W.step === 'kitchen') placeFig(-6, 0, 3.4, Math.PI / 2);
+  else if (W.step === 'scare' && !W.figHide) placeFig(-.85, -.32, 2.75, Math.PI / 2);
+  else if (W.step === 'peep') placeFig(6, 0, W.st < 1.8 ? 16 : 10.72, Math.PI);
+  else if (W.step === 'closet') closetFig(W.st);
+  else if (mode === 'dying' && W.end === 'closet' && W.caught === NET.me && mySpot) { const sp = SPOTS[mySpot]; placeFig(sp.x, 0, sp.z - .62, 0); }
+  // друзья
+  let holder = null;
+  PL.forEach((p, i) => {
+    const av = avatars[i]; if (!av) return;
+    if (p.isMe || !L.started || i > 2 || p.pres.hid || typeof p.pres.x !== 'number') { av.g.visible = false; av.seen = false; return; }
+    setLabel(av, p.nick, i);
+    const tx = p.pres.x, tz = p.pres.z, ty = +p.pres.y || 0;
+    if (!av.seen) { av.x = tx; av.z = tz; av.yaw = ty; av.seen = true; }
+    const k = Math.min(1, dt * 12), ox = av.x, oz = av.z;
+    av.x += (tx - av.x) * k; av.z += (tz - av.z) * k;
+    let dy = ty - av.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); av.yaw += dy * k; av.p = +p.pres.p || 0;
+    av.g.position.set(av.x, 0, av.z); av.g.rotation.y = av.yaw + Math.PI; av.head.rotation.x = -av.p * .5; av.g.visible = true;
+    av.stepAcc += Math.hypot(av.x - ox, av.z - oz);
+    if (av.stepAcc > .65) { av.stepAcc = 0; play(o => SND.step(o, .5), 1, [av.x, .1, av.z]); }
+    if (W.flashBy === p.peer && p.pres.fl) holder = av;
+  });
+  for (let i = PL.length; i < 3; i++) avatars[i].g.visible = false;
+  if (holder) {
+    rflash.intensity = 1.7; rflash.position.set(holder.x, 1.45, holder.z);
+    const cp = Math.cos(holder.p);
+    rflash.target.position.set(holder.x - Math.sin(holder.yaw) * cp * 3, 1.45 + Math.sin(holder.p) * 3, holder.z - Math.cos(holder.yaw) * cp * 3);
+  } else rflash.intensity = 0;
+}
+
+function update(dt) {
+  for (let i = timers.length - 1; i >= 0; i--) { timers[i].t -= dt; if (timers[i].t <= 0) { const f = timers[i].fn; timers.splice(i, 1); f(); } }
+  if (!subCur && subQ.length) { subCur = subQ.shift(); subCur.left = subCur.dur; if (subCur.fn) subCur.fn(); drawSub(subCur); }
+  if (subCur) { subCur.left -= dt; if (subCur.left <= 0) { subCur = null; drawSub(null); } }
+  let moving = false;
+  if (mode === 'walk' && !paused) {
+    let fx = 0, fz = 0;
+    if (keys.KeyW || keys.ArrowUp) fz += 1; if (keys.KeyS || keys.ArrowDown) fz -= 1;
+    if (keys.KeyA || keys.ArrowLeft) fx -= 1; if (keys.KeyD || keys.ArrowRight) fx += 1;
+    fx += joy.x; fz += joy.y;
+    const len = Math.hypot(fx, fz); if (len > 1) { fx /= len; fz /= len; }
+    const sp = 2.3 * dt, sn = Math.sin(yaw), cs = Math.cos(yaw);
+    const dx = (-sn * fz + cs * fx) * sp, dz = (-cs * fz - sn * fx) * sp;
+    if (!blocked(P.x + dx, P.z)) P.x += dx;
+    if (!blocked(P.x, P.z + dz)) P.z += dz;
+    moving = len > .15;
+  }
+  if (moving) { bob += dt * 8.5; stepT -= dt; if (stepT <= 0) { stepT = .5; play(o => SND.step(o, .16)); } } else stepT = .1;
+  if (mode === 'walk') camera.position.set(P.x, 1.6 + (REDUCE ? 0 : Math.sin(bob) * .03), P.z);
+  let sx = 0, sy = 0; if (shake > 0) { shake -= dt; if (!REDUCE) { sx = (Math.random() - .5) * .04; sy = (Math.random() - .5) * .04; } }
+  camera.rotation.set(pitch + sy, yaw + sx, 0);
+  flash.intensity = L.flashOn && W.flashBy === NET.me && mode !== 'closet' ? 1.9 : 0;
+  myPres.x = Math.round(P.x * 100) / 100; myPres.z = Math.round(P.z * 100) / 100;
+  myPres.y = Math.round(yaw * 100) / 100; myPres.p = Math.round(pitch * 100) / 100; myPres.fl = !!(L.flashOn && W.flashBy === NET.me);
+  // машина на трассе
+  carT -= dt;
+  if (carT <= 0 && car.position.x < -150) { carDir = Math.random() < .5 ? 1 : -1; car.position.x = carDir > 0 ? -90 : 100; car.rotation.y = carDir > 0 ? 0 : Math.PI; car.position.z = carDir > 0 ? -24.5 : -27.5; carT = rand(25, 45); play(SND.whoosh, .45); }
+  if (car.position.x > -150) { car.position.x += carDir * 22 * dt; if (car.position.x > 110 || car.position.x < -100) car.position.x = -200; }
+  // звуки по шагам сюжета
+  if (W.ring) { ringT -= dt; if (ringT <= 0) { ringT = 4.4; play(SND.ring, 1.3, [4.32, .9, 9.3]); } }
+  if (W.step === 'knock') { knockT -= dt; if (knockT <= 0) { knockT = 7; play(SND.knock, 1.4, [6, 1.2, 10.3]); } }
+  if (W.step === 'dark') {
+    darkT -= dt;
+    if (darkT <= 0) {
+      darkT = rand(8, 13); const r = Math.random();
+      if (!rattled || r < .4) { play(SND.rattle, 1.3, [6.38, 1, 10.1]); if (!rattled) say(null, 'Кто-то дёргает ручку входной двери.'); rattled = true; }
+      else if (r < .75) play(SND.roof, .9, [P.x + rand(-3, 3), 3, P.z + rand(-3, 3)]);
+      else play(SND.hiss, .6, [cat.position.x, .3, cat.position.z]);
+    }
+  }
+  if (W.step === 'call' || W.step === 'hide') {
+    creepT -= dt;
+    if (creepT <= 0) { creepT = rand(6, 10); const x = rand(5, 11), z = rand(1, 5); play(o => SND.step(o, .7), 1, [x, .1, z]); later(.6, () => play(o => SND.step(o, .6), 1, [x + .4, .1, z + .3])); }
+  }
+  // окно на кухне: кто посмотрел — тот вздрогнул
+  if (W.step === 'scare' && !W.figHide && !L.sawLocal && mode === 'walk') {
+    const lk = lookingAt(-.85, 1.56, 2.75);
+    if (lk.dot > .9 && lk.d < 7.5) { L.sawLocal = true; myPres.saw = true; play(SND.sting, 1); shake = .5; L.flick = .5; sendPresence(); }
+  }
+  // глазок
+  if (mode === 'peep' && W.step === 'peep') {
+    if (prevPeepSt < 1.8 && W.st >= 1.8 && !peepStung) { peepStung = true; play(SND.sting, 1); shake = .6; }
+    prevPeepSt = W.st;
+  }
+  // напряжение и сердце
+  if (mode === 'dying') tension = 1;
+  else if (mode === 'closet') tension = fig.visible ? .9 : .55;
+  else if (W.step === 'call' || W.step === 'hide') tension = .4 + .6 * clamp(W.st / LIMIT[W.step], 0, 1);
+  else tension = W.step === 'dark' ? .3 : 0;
+  if (droneG) droneG.gain.setTargetAtTime(.045 + tension * .05, AC.currentTime, .5);
+  if (tension > 0) { hbT -= dt; if (hbT <= 0) { hbT = 1.15 - tension * .6; play(o => SND.heart(o, .25 + tension * .45)); } }
+  if (mode === 'closet') closetUpdate(dt);
+  if (AC) for (const e of emitters) { const s = spatial(e.x, e.y, e.z); e.g.gain.setTargetAtTime(e.base() * s.att, AC.currentTime, .08); if (e.p) e.p.pan.setTargetAtTime(s.pan, AC.currentTime, .05); }
+  focusT -= dt; if (focusT <= 0) { focusT = .08; updateFocus(); }
+  drawHUD();
+}
+
+let last = performance.now();
+function frame(now, background) {
+  const dt = Math.min(background ? .5 : .05, (now - last) / 1000); last = now;
+  const frozen = paused && NET.mode !== 'multi';
+  if ((NET.mode === 'multi' || W.started) && !frozen) netFrame(dt);
+  watch();
+  if (L.started && !L.over && !frozen) { applyWorld(dt); update(dt); }
+  else if (!L.started) { camera.position.set(P.x, 1.6, P.z); camera.rotation.set(pitch, yaw + Math.sin(now / 4000) * .08, 0); }
+}
+let lastRaf = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  lastRaf = performance.now();
+  frame(now, false);
+  renderer.render(scene, mode === 'peep' ? peepCam : camera);
+}
+// в свёрнутой вкладке анимация засыпает — комнату держим живой таймером
+setInterval(() => { const now = performance.now(); if (NET.mode === 'multi' && now - lastRaf > 500) frame(now, true); }, 400);
+applyLights();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
