@@ -1,21 +1,20 @@
 /* Связь между игроками для «Дома у трассы».
    На claude.ai — комната Claude (capability room).
-   На любом другом сайте — публичный посредник MQTT по защищённому веб-соединению (wss):
-   каждый игрок публикует своё состояние в тему комнаты и слушает остальных.
-   Прямые соединения браузеров (WebRTC) не используем: их часто режут рабочие сети и VPN.
+   На любом другом сайте — Firebase Realtime Database: каждый игрок пишет своё состояние
+   в rooms/<код>/p/<id>, база сразу рассылает его остальным, а при закрытии вкладки сама удаляет запись.
    Наружу у обоих вариантов одинаковый вид: room.peers(), room.presence(patch), room.onError(fn). */
 (function () {
   'use strict';
-  // Публичные серверы без регистрации. shiftr.io обычно быстрее, но иногда молчит —
-  // тогда через 10 с переходим на HiveMQ (он медленнее, зато отвечает почти всегда).
-  const BROKERS = [
-    { url: 'wss://public.cloud.shiftr.io:443', opts: { username: 'public', password: 'public' }, wait: 10000 },
-    { url: 'wss://broker.hivemq.com:8884/mqtt', opts: {}, wait: 25000 }
-  ];
-  const FIND_WAIT = 8000;     // мс: сколько ждать создателя комнаты на одном сервере
-  const ROOT = 'domutrassy/v1/';
-  const SEND_EVERY = 125;     // мс: не чаще 8 сообщений в секунду
-  const STALE = 8000;         // мс: игрок пропал, если молчит дольше
+  // Проект Firebase «dom-u-trassy» (личный аккаунт). Для базы без входа по логину хватает адреса;
+  // доступ ограничивают правила базы (см. ПРОГРЕСС.md).
+  const FIREBASE_CONFIG = {
+    projectId: 'dom-u-trassy',
+    databaseURL: 'https://dom-u-trassy-default-rtdb.europe-west1.firebasedatabase.app'
+  };
+  const SEND_EVERY = 150;     // мс: не чаще ~7 записей в секунду
+  const HEARTBEAT = 2000;     // мс: напоминаем о себе, даже если ничего не менялось
+  const STALE = 15000;        // мс: игрок пропал, если молчит дольше
+  const FIND_WAIT = 6000;     // мс: сколько ждать, пока появится создатель комнаты
 
   async function claudeRoom() {
     if (!window.claude || !window.claude.use) return null;
@@ -40,95 +39,95 @@
     };
   }
 
-  // ---- посредник MQTT ----
+  // ---- Firebase ----
   function applyPatch(obj, patch) {
     const o = Object.assign({}, obj);
     for (const k in patch) { if (patch[k] === null) delete o[k]; else o[k] = patch[k]; }
     return o;
   }
-  function connectBroker(b, id, will) {
+  let db = null;
+  function database() {
+    if (!db) { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.database(); }
+    return db;
+  }
+  function waitConnected(d, ms) {
     return new Promise((res, rej) => {
-      const c = window.mqtt.connect(b.url, Object.assign({ clientId: id, keepalive: 20, connectTimeout: b.wait, reconnectPeriod: 2000, clean: true, will }, b.opts));
-      const t = setTimeout(() => { try { c.end(true); } catch (e) { } rej('timeout'); }, b.wait + 500);
-      c.once('connect', () => { clearTimeout(t); res(c); });
-      c.once('error', () => { clearTimeout(t); try { c.end(true); } catch (e) { } rej('network'); });
+      const ref = d.ref('.info/connected');
+      const t = setTimeout(() => { ref.off('value', on); rej('timeout'); }, ms);
+      const on = s => { if (s.val() === true) { clearTimeout(t); ref.off('value', on); res(); } };
+      ref.on('value', on);
     });
   }
-  // Создатель комнаты берёт первый сервер, который ответил. Тот, кто входит, ищет комнату по очереди на всех.
-  async function openRelay(code, create) {
-    let lastErr = 'network';
-    for (const b of BROKERS) {
-      try { return await openOn(b, code, create); }
-      catch (e) { lastErr = e; if (create && e === 'unavailable-id') throw e; }
-    }
-    throw lastErr;
-  }
-  async function openOn(broker, code, create) {
+  async function openFirebase(code, create) {
+    const d = database();
+    await waitConnected(d, 20000);
     const id = 'p' + Math.random().toString(36).slice(2, 10);
-    const base = ROOT + code + '/p/', mineTopic = base + id;
-    const will = { topic: mineTopic, payload: '', qos: 0, retain: false };
-    const client = await connectBroker(broker, id, will);
+    const roomRef = d.ref('rooms/' + code + '/p'), myRef = roomRef.child(id);
     const others = new Map();   // id -> { presence, at }
-    let mine = {}, snap = null, dirty = false, lastSent = 0, timer = null, offlineSince = 0, failed = false;
+    let mine = {}, snap = null, lastSent = 0, timer = null, offlineSince = 0, failed = false;
     const errs = [];
-    client.on('message', (topic, buf) => {
-      const pid = topic.slice(base.length); if (!pid || pid === id) return;
-      const txt = buf && buf.toString();
-      if (!txt) { others.delete(pid); snap = null; return; }
-      try { const m = JSON.parse(txt); if (m && m.p && typeof m.p === 'object') { others.set(pid, { presence: m.p, at: Date.now() }); snap = null; } } catch (e) { }
-    });
-    client.on('offline', () => { if (!offlineSince) offlineSince = Date.now(); });
-    client.on('connect', () => { offlineSince = 0; client.subscribe(base + '+'); });
-    await new Promise((res, rej) => client.subscribe(base + '+', { qos: 0 }, e => e ? rej('network') : res()));
+    // присутствие приходит строкой JSON: так Firebase не выбрасывает пустые поля и null
+    const take = s => {
+      if (s.key === id) return;
+      const v = s.val(); let p = null;
+      try { p = v && typeof v.j === 'string' ? JSON.parse(v.j) : null; } catch (e) { }
+      if (p && typeof p === 'object') { others.set(s.key, { presence: p, at: Date.now() }); snap = null; }
+    };
+    roomRef.on('child_added', take);
+    roomRef.on('child_changed', take);
+    roomRef.on('child_removed', s => { others.delete(s.key); snap = null; });
+    // проверка кода: при создании комната должна быть пустой, при входе — не пустой
+    if (create) await new Promise(r => setTimeout(r, 800));
+    else { const t0 = Date.now(); while (!others.size && Date.now() - t0 < FIND_WAIT) await new Promise(r => setTimeout(r, 200)); }
+    if (create && others.size) { roomRef.off(); throw 'unavailable-id'; }
+    if (!create && !others.size) { roomRef.off(); throw 'not_found'; }
+
+    myRef.onDisconnect().remove();
     function flush() {
-      timer = null; if (!client.connected) return;
-      lastSent = Date.now(); dirty = false;
-      client.publish(mineTopic, JSON.stringify({ p: mine }), { qos: 0, retain: false });
+      timer = null; lastSent = Date.now();
+      myRef.set({ j: JSON.stringify(mine), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => { });
     }
     function schedule() {
-      dirty = true; if (timer) return;
-      const wait = Math.max(0, SEND_EVERY - (Date.now() - lastSent));
-      timer = setTimeout(flush, wait);
+      if (timer) return;
+      timer = setTimeout(flush, Math.max(0, SEND_EVERY - (Date.now() - lastSent)));
     }
+    d.ref('.info/connected').on('value', s => {
+      if (s.val() === true) { offlineSince = 0; myRef.onDisconnect().remove(); flush(); }
+      else if (!offlineSince) offlineSince = Date.now();
+    });
+    // напоминаем о себе; без связи дольше 15 с — сообщаем игре
+    setInterval(() => {
+      if (offlineSince && !failed && Date.now() - offlineSince > 15000) { failed = true; errs.forEach(f => f('network')); }
+      if (Date.now() - lastSent > HEARTBEAT) flush();
+    }, 1000);
+    addEventListener('pagehide', () => { try { myRef.remove(); } catch (e) { } });
     const peersNow = () => {
       const now = Date.now(); let changed = false;
       others.forEach((v, k) => { if (now - v.at > STALE) { others.delete(k); changed = true; } });
       if (changed) snap = null;
       return snap || (snap = [{ peer: id, sameTab: true, presence: mine }].concat([...others].map(([k, v]) => ({ peer: k, sameTab: false, presence: v.presence }))));
     };
-    // проверка кода: при создании комната должна быть пустой, при входе — не пустой
-    if (create) await new Promise(r => setTimeout(r, 1500));
-    else { const t0 = Date.now(); while (!others.size && Date.now() - t0 < FIND_WAIT) await new Promise(r => setTimeout(r, 200)); }
-    const count = others.size;
-    if (create && count > 0) { try { client.end(true); } catch (e) { } throw 'unavailable-id'; }
-    if (!create && count === 0) { try { client.end(true); } catch (e) { } throw 'not_found'; }
-    // раз в секунду напоминаем о себе; без связи дольше 12 с — сообщаем игре
-    setInterval(() => {
-      if (offlineSince && !failed && Date.now() - offlineSince > 12000) { failed = true; errs.forEach(f => f('network')); }
-      if (Date.now() - lastSent > 1000) flush();
-    }, 1000);
-    addEventListener('pagehide', () => { try { client.publish(mineTopic, '', { qos: 0, retain: false }); client.end(); } catch (e) { } });
     return {
-      kind: 'relay', isHub: !!create,
+      kind: 'firebase', isHub: !!create,
       peers: peersNow,
       presence: async patch => { mine = applyPatch(mine, patch); snap = null; schedule(); },
       onError: fn => errs.push(fn),
-      close: () => { try { client.publish(mineTopic, ''); client.end(); } catch (e) { } }
+      close: () => { try { roomRef.off(); myRef.remove(); } catch (e) { } }
     };
   }
 
   let lobby = null, kind = null;
   window.DomNet = {
-    // 'claude' | 'relay' | null
+    // 'claude' | 'firebase' | null
     async detect() {
       lobby = await claudeRoom();
-      kind = lobby ? 'claude' : (window.mqtt ? 'relay' : null);
+      kind = lobby ? 'claude' : (window.firebase && FIREBASE_CONFIG ? 'firebase' : null);
       return kind;
     },
     // create: true — создаю комнату с этим кодом, false — вхожу в чужую
     async open(code, create) {
       if (kind === 'claude') return openClaude(lobby, code);
-      if (kind === 'relay') return openRelay(code, create);
+      if (kind === 'firebase') return openFirebase(code, create);
       throw 'unavailable';
     },
     errorText(e) {
@@ -136,7 +135,7 @@
         case 'not_found': return 'Комната с таким кодом не найдена. Проверь код и что у друга открыто лобби.';
         case 'unavailable-id': return 'Такой код уже занят. Попробуй ещё раз.';
         case 'host_left': return 'Связь с хозяином комнаты пропала. Игра у него закрылась или пропал интернет.';
-        case 'network': case 'timeout': return 'Не получается связаться с сервером игры. Проверь интернет и попробуй ещё раз. Если не выходит в рабочей сети или под VPN, попробуй дома или с телефона.';
+        case 'network': case 'timeout': return 'Не получается связаться с сервером игры. Проверь интернет и попробуй ещё раз.';
         default: return 'Не получилось подключиться. Попробуй ещё раз.';
       }
     }

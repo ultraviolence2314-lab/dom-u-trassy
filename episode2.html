@@ -237,7 +237,8 @@ body{font-family:var(--f-mono);-webkit-user-select:none;user-select:none;-webkit
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="net.js"></script>
 <script>
 (() => {
@@ -978,7 +979,7 @@ const CODE_CH = 'abcdefghjkmnpqrstuvwxyz23456789';
 const newCode = () => { let c = ''; for (let i = 0; i < 4; i++) c += CODE_CH[Math.random() * CODE_CH.length | 0]; return c; };
 async function joinRoom(code, create) {
   $('createBtn').disabled = $('joinBtn').disabled = true;
-  $('netNote').textContent = (create ? 'Создаю комнату…' : 'Подключаюсь к комнате…') + ' Обычно это пара секунд, в медленной сети — до полуминуты.';
+  $('netNote').textContent = (create ? 'Создаю комнату…' : 'Подключаюсь к комнате…') + '';
   try { NET.rm = await DomNet.open(code, create); }
   catch (e) {
     $('createBtn').disabled = $('joinBtn').disabled = false;
